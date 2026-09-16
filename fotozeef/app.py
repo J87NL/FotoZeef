@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import signal
 import sys
 import tempfile
@@ -35,8 +37,6 @@ def build_application(argv: list[str]) -> QApplication:
 
 def selftest() -> int:
     """Boots the whole stack offscreen; CI runs this against the packaged builds."""
-    import os
-
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     app = build_application([APP_NAME])
 
@@ -87,6 +87,10 @@ def selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv)
+    logging.basicConfig(
+        level=os.environ.get("FOTOZEEF_LOG_LEVEL", "WARNING").upper(),
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     if "--version" in arguments:
         print(f"{APP_NAME} {APP_VERSION}")
         return 0

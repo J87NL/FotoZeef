@@ -18,6 +18,7 @@ class Viewer(QWidget):
         self._entry: TimelineEntry | None = None
         self._pixmap: QPixmap | None = None
         self._selected = False
+        self._message: str | None = None
         self._placeholder = "Open or create a project to start culling"
         self.setMinimumSize(320, 240)
         self.setAutoFillBackground(True)
@@ -31,10 +32,15 @@ class Viewer(QWidget):
         self._entry = entry
         self._pixmap = pixmap
         self._selected = selected
+        self._message = None
         self.update()
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
+        self.update()
+
+    def show_message(self, text: str) -> None:
+        self._message = text
         self.update()
 
     def set_placeholder(self, text: str) -> None:
@@ -52,7 +58,9 @@ class Viewer(QWidget):
 
         caption_height = 34
         canvas = self.rect().adjusted(12, 12, -12, -(caption_height + 12))
-        if self._pixmap is None or self._pixmap.isNull():
+        if self._message is not None:
+            self._draw_centered_text(painter, canvas, self._message, CAPTION_DIM)
+        elif self._pixmap is None or self._pixmap.isNull():
             self._draw_centered_text(painter, canvas, "Loading…", CAPTION_DIM)
         else:
             target = self._draw_pixmap(painter, canvas)

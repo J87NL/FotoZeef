@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -27,6 +28,8 @@ from fotozeef.core.models import (
 from fotozeef.core.scanner import ScannedGroup, scan
 
 DEFAULT_DESTINATION_NAME = "selectie"
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -148,6 +151,8 @@ class Library:
             on_progress=(lambda count: on_progress(source.label, count)) if on_progress else None,
         )
         summary.skipped_videos = report.skipped_videos
+        if report.skipped_videos:
+            _log.info("skipped %d video files in %s", report.skipped_videos, source.path)
         if report.cancelled:
             summary.cancelled = True
             return summary
@@ -167,6 +172,13 @@ class Library:
         summary.missing = len(gone)
 
         self._maybe_relabel(source)
+        _log.info(
+            "scanned %s: %d photos, %d new, %d missing",
+            source.path,
+            len(report.groups),
+            summary.added,
+            summary.missing,
+        )
         return summary
 
     def reconcile_state(self, state: ProjectState) -> selection_ops.ReconcileResult:

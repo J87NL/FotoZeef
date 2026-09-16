@@ -137,3 +137,51 @@ def test_refusing_to_remove_a_foreign_file_does_not_block_culling(
     assert photo_id in window._selected
     assert (destination / "0.jpg").is_file()
     assert "not written by this app" in window.statusBar().currentMessage()
+
+
+def test_empty_project_states_the_obvious(
+    app: QApplication, tmp_path: Path, library: Library
+) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    project = library.create_project("empty", [empty], tmp_path / "out", ProjectSettings())
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(library.open_project(project.id))
+
+    assert window._viewer._placeholder == "This project has no photos yet"
+    assert window._status.text() == "No project open"
+    window.close()
+
+
+def test_unreadable_file_reports_in_the_viewer(
+    app: QApplication, tmp_path: Path, library: Library
+) -> None:
+    source = tmp_path / "cam"
+    source.mkdir()
+    (source / "broken.jpg").write_bytes(b"not an image")
+    project = library.create_project("broken", [source], tmp_path / "out", ProjectSettings())
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(library.open_project(project.id))
+
+    for _ in range(200):
+        app.processEvents()
+        if window._unreadable:
+            break
+    assert window._unreadable
+    assert window._viewer._message == "This file could not be read"
+    window.close()
+
+
+def test_skipped_videos_are_reported_once(
+    app: QApplication, tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    source = tmp_path / "cam"
+    jpeg_factory(source / "a.jpg")
+    (source / "clip.mp4").write_bytes(b"video")
+    (source / "clip2.mov").write_bytes(b"video")
+    project = library.create_project("mixed", [source], tmp_path / "out", ProjectSettings())
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(library.open_project(project.id))
+
+    assert "2 video files skipped" in window.statusBar().currentMessage()
+    window.close()

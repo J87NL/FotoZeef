@@ -44,6 +44,8 @@ class MainWindow(QMainWindow):
         scale = self.screen().devicePixelRatio() if self.screen() is not None else 1.0
         self._service = ThumbnailService(cache, scale=scale, parent=self)
         self._service.ready.connect(self._on_thumbnail_ready)
+        self._service.failed.connect(self._on_thumbnail_failed)
+        self._unreadable: set[int] = set()
 
         self._model = FilmstripModel(self._service, self)
         self._filmstrip = Filmstrip(self._model, self)
@@ -275,6 +277,7 @@ class MainWindow(QMainWindow):
         self._close_progress()
         self._state = state
         self._reference = None
+        self._unreadable = set()
         self._selected = set(state.selections)
         self._service.clear()
         self._model.set_entries(state.entries)
@@ -282,9 +285,23 @@ class MainWindow(QMainWindow):
         self._service.set_positions(state.positions())
         self.setWindowTitle(f"{state.project.name} — {APP_NAME}")
         self._set_cursor(state.cursor, persist=False)
+        self._render_current()
         self._update_status()
+        self._report_scan(state)
+
+    def _report_scan(self, state: ProjectState) -> None:
         if state.scan.cancelled:
-            self.statusBar().showMessage("Scan cancelled; showing what was found so far", 5000)
+            self.statusBar().showMessage("Scan cancelled; showing what was found so far", 6000)
+            return
+        notes: list[str] = []
+        if state.scan.added:
+            notes.append(f"{state.scan.added} new")
+        if state.scan.missing:
+            notes.append(f"{state.scan.missing} missing")
+        if state.scan.skipped_videos:
+            notes.append(f"{state.scan.skipped_videos} video files skipped")
+        if notes:
+            self.statusBar().showMessage(", ".join(notes), 6000)
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()
@@ -317,13 +334,25 @@ class MainWindow(QMainWindow):
         state = self._state
         entry = state.current if state is not None else None
         if entry is None:
+            self._viewer.set_placeholder(
+                "This project has no photos yet"
+                if state is not None
+                else "Open or create a project to start culling"
+            )
             self._viewer.show_entry(None, None, False)
             return
         pixmap = self._service.pixmap(entry, self._service.preview_target)
         if pixmap is None:
             pixmap = self._service.pixmap(entry, self._service.filmstrip_target)
         self._viewer.show_entry(entry, pixmap, entry.photo.id in self._selected)
+        if pixmap is None and entry.photo.id in self._unreadable:
+            self._viewer.show_message(self._unreadable_text(entry))
         self._update_status()
+
+    def _unreadable_text(self, entry: TimelineEntry) -> str:
+        if entry.photo.missing:
+            return "This file is missing from its source folder"
+        return "This file could not be read"
 
     def _prefetch(self) -> None:
         state = self._state
@@ -333,6 +362,12 @@ class MainWindow(QMainWindow):
             index = state.cursor + offset
             if 0 <= index < len(state.entries):
                 self._service.request(state.entries[index], self._service.preview_target)
+
+    def _on_thumbnail_failed(self, photo_id: int, _target: int, _message: str) -> None:
+        self._unreadable.add(photo_id)
+        state = self._state
+        if state is not None and state.current is not None and state.current.photo.id == photo_id:
+            self._render_current()
 
     def _on_thumbnail_ready(self, photo_id: int, target: int) -> None:
         if target == self._service.filmstrip_target:
