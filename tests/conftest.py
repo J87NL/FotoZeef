@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from PIL import Image
 
 from fotozeef.core.db import Database
 from fotozeef.core.library import Library
+
+os.environ["QT_QPA_PLATFORM"] = os.environ.get("QT_QPA_PLATFORM") or "offscreen"
 
 
 @pytest.fixture
