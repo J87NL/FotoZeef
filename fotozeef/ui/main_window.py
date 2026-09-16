@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
 
     def open_project(self) -> None:
         dialog = OpenProjectDialog(self._library.projects.list(), self)
-        dialog.forget_requested.connect(self._library.projects.delete)
+        dialog.forget_requested.connect(self.forget_project)
         if dialog.exec() != OpenProjectDialog.DialogCode.Accepted:
             return
         project_id = dialog.selected_project_id()
@@ -110,11 +110,27 @@ class MainWindow(QMainWindow):
             return
         self._start_open(project_id)
 
+    def forget_project(self, project_id: int) -> None:
+        self._library.projects.delete(project_id)
+        if self._state is None or self._state.project.id != project_id:
+            return
+        self._selection_queue.flush()
+        self._state = None
+        self._selected = set()
+        self._unreadable = set()
+        self._reference = None
+        self._service.clear()
+        self._model.set_entries(())
+        self.setWindowTitle(APP_NAME)
+        self._render_current()
+
     def edit_settings(self) -> None:
         if self._state is None:
             return
         dialog = SettingsDialog(self._state.project, self)
         if dialog.exec() != SettingsDialog.DialogCode.Accepted:
+            return
+        if dialog.destination != self._state.project.destination and not self._confirm_move():
             return
         project_id = self._state.project.id
         if dialog.name:
@@ -122,6 +138,18 @@ class MainWindow(QMainWindow):
         self._library.projects.set_destination(project_id, dialog.destination)
         self._library.projects.update_settings(project_id, dialog.settings)
         self._start_open(project_id)
+
+    def _confirm_move(self) -> bool:
+        answer = QMessageBox.question(
+            self,
+            APP_NAME,
+            "The selection is read back from the destination folder, so pointing the project"
+            " at a different folder starts from whatever is already in there.\n\n"
+            "Photos already copied stay where they are. Continue?",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QMessageBox.StandardButton.Ok
 
     def edit_offsets(self) -> None:
         if self._state is None:

@@ -185,3 +185,29 @@ def test_skipped_videos_are_reported_once(
 
     assert "2 video files skipped" in window.statusBar().currentMessage()
     window.close()
+
+
+def test_forgetting_the_open_project_clears_the_window(window: MainWindow) -> None:
+    project_id = window._state.project.id
+
+    window.forget_project(project_id)
+
+    assert window._state is None
+    assert window._model.rowCount() == 0
+    assert window._selected == set()
+    assert window._library.projects.get(project_id) is None
+
+
+def test_forgetting_another_project_leaves_the_open_one_alone(
+    window: MainWindow, tmp_path: Path
+) -> None:
+    other = window._library.create_project(
+        "other", [tmp_path / "cam"], tmp_path / "other-out", ProjectSettings()
+    )
+    open_id = window._state.project.id
+
+    window.forget_project(other.id)
+
+    assert window._state is not None
+    assert window._state.project.id == open_id
+    assert window._model.rowCount() == 5
