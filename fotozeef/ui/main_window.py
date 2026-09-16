@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeyEvent, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QKeyEvent, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -248,7 +249,12 @@ class MainWindow(QMainWindow):
         view_menu = self.menuBar().addMenu("&View")
         view_menu.addAction(self._action("&Fullscreen", "F", self.toggle_fullscreen))
 
-    def _action(self, text: str, shortcut: object, handler: object) -> QAction:
+    def _action(
+        self,
+        text: str,
+        shortcut: QKeySequence.StandardKey | str | None,
+        handler: Callable[[], None],
+    ) -> QAction:
         action = QAction(text, self)
         if shortcut is not None:
             action.setShortcut(shortcut)
@@ -258,6 +264,7 @@ class MainWindow(QMainWindow):
     def _start_open(self, project_id: int) -> None:
         if self._opener.busy:
             return
+        self._selection_queue.flush()
         self._show_progress()
         self._opener.start(project_id)
 
@@ -410,7 +417,7 @@ class MainWindow(QMainWindow):
             return
         self._library.set_cursor(state, state.cursor)
 
-    def _thumbnail_for(self, entry: TimelineEntry | None) -> object:
+    def _thumbnail_for(self, entry: TimelineEntry | None) -> QPixmap | None:
         if entry is None:
             return None
         return self._service.pixmap(entry, self._service.filmstrip_target)

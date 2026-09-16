@@ -178,16 +178,6 @@ class Filmstrip(QListView):
         self.setCurrentIndex(index)
         self.scrollTo(index, QListView.ScrollHint.PositionAtCenter)
 
-    def visible_rows(self) -> tuple[int, int]:
-        model = self.model()
-        if model is None or model.rowCount() == 0:
-            return (0, 0)
-        first = self.indexAt(self.viewport().rect().topLeft())
-        last = self.indexAt(self.viewport().rect().topRight() + QPointF(-1, 0).toPoint())
-        start = first.row() if first.isValid() else 0
-        end = last.row() if last.isValid() else model.rowCount() - 1
-        return (start, end)
-
     def _on_current_changed(
         self,
         current: QModelIndex | QPersistentModelIndex,

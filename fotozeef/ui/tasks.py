@@ -65,6 +65,7 @@ class SelectionQueue(QObject):
         self._lock = threading.Lock()
         self._pending: list[tuple[int, bool, Callable[[], None]]] = []
         self._thread: threading.Thread | None = None
+        self._running = False
         self._closed = False
 
     def submit(self, photo_id: int, selected: bool, operation: Callable[[], None]) -> None:
@@ -72,8 +73,9 @@ class SelectionQueue(QObject):
             if self._closed:
                 return
             self._pending.append((photo_id, selected, operation))
-            if self._thread is not None and self._thread.is_alive():
+            if self._running:
                 return
+            self._running = True
             self._thread = threading.Thread(target=self._drain, name="selection", daemon=True)
             self._thread.start()
 
@@ -91,6 +93,7 @@ class SelectionQueue(QObject):
         while True:
             with self._lock:
                 if not self._pending:
+                    self._running = False
                     return
                 photo_id, selected, operation = self._pending.pop(0)
             try:
