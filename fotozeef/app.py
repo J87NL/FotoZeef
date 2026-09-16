@@ -79,6 +79,7 @@ def selftest() -> int:
         window.show()
         app.processEvents()
         window.close()
+        library.close()
         checks.append("window=ok")
 
     print(f"{APP_NAME} {APP_VERSION} selftest: " + " ".join(checks))
@@ -104,7 +105,10 @@ def main(argv: list[str] | None = None) -> int:
     window = MainWindow(library, ThumbnailCache(cache_dir()))
     window.show()
     window.open_last_project()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        library.close()
 
 
 if __name__ == "__main__":

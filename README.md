@@ -86,11 +86,67 @@ shoot never pays for EXIF twice.
 
 ## Packaging
 
-See `packaging/`. CI builds all three platforms on tags:
+PyInstaller does not cross-compile: each installer must be built on its own
+operating system. CI does all three on a `v*` tag; locally you build the one
+you are sitting in front of.
 
-- Linux: AppImage
-- macOS: `.app` via PyInstaller (codesigning/notarisation hooks are present but unused)
-- Windows: PyInstaller onedir plus an Inno Setup installer
+### Ubuntu — AppImage
+
+```bash
+sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libfontconfig1 libfuse2
+uv sync
+bash packaging/linux/build_appimage.sh
+./dist/FotoZeef-x86_64.AppImage
+```
+
+Produces a single ~88 MB `dist/FotoZeef-x86_64.AppImage`; mark it executable and
+double-click it. It carries its own Python, Qt and the libheif/libraw natives.
+It deliberately does **not** bundle `libEGL`/`libGL` — graphics drivers have to
+match the host, so those come from the machine. Every Ubuntu desktop has them;
+a bare server image needs `libegl1 libgl1`.
+
+### Windows — .exe and installer
+
+Must be built on Windows (or by CI). With Python and [uv] installed:
+
+```powershell
+uv sync
+uv run pyinstaller --noconfirm --clean packaging\fotozeef.spec
+.\dist\FotoZeef\FotoZeef.exe --selftest
+```
+
+`dist\FotoZeef\` is a self-contained folder; `FotoZeef.exe` runs from it. For a
+real installer, with [Inno Setup] 6 installed:
+
+```powershell
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\installer.iss
+```
+
+That writes `packaging\windows\Output\FotoZeef-0.1.0-setup.exe`, which installs
+per-user without admin rights. The bundled manifest turns on long-path awareness
+and PerMonitorV2 DPI.
+
+### macOS — .app
+
+```bash
+uv sync
+bash packaging/macos/build_app.sh
+```
+
+Unsigned, so the first launch needs right-click ▸ Open. Set
+`MACOS_SIGN_IDENTITY` and `MACOS_NOTARY_PROFILE` to sign and notarise; those
+paths are wired but untested, since there is no certificate yet.
+
+### Via CI
+
+Pushing a tag builds and uploads all three as workflow artifacts:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+[uv]: https://docs.astral.sh/uv/
+[Inno Setup]: https://jrsoftware.org/isinfo.php
 
 ## Decisions
 

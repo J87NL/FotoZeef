@@ -95,6 +95,9 @@ class Database:
         self._path = path
         self._local = threading.local()
         self._write_lock = threading.Lock()
+        self._registry_lock = threading.Lock()
+        self._connections: list[sqlite3.Connection] = []
+        self._closed = False
         path.parent.mkdir(parents=True, exist_ok=True)
         self._migrate()
 
@@ -107,12 +110,16 @@ class Database:
         existing = getattr(self._local, "connection", None)
         if existing is not None:
             return existing
-        connection = sqlite3.connect(self._path, timeout=30.0)
+        if self._closed:
+            raise RuntimeError("This database handle is closed")
+        connection = sqlite3.connect(self._path, timeout=30.0, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         self._local.connection = connection
+        with self._registry_lock:
+            self._connections.append(connection)
         return connection
 
     @contextmanager
@@ -121,11 +128,23 @@ class Database:
             yield connection
 
     def close(self) -> None:
-        existing = getattr(self._local, "connection", None)
-        if existing is None:
-            return
-        existing.close()
-        self._local.connection = None
+        """Closes every thread's connection; Windows will not delete an open file."""
+        with self._registry_lock:
+            self._closed = True
+            connections = list(self._connections)
+            self._connections.clear()
+        for connection in connections:
+            try:
+                connection.close()
+            except sqlite3.Error:
+                continue
+        self._local = threading.local()
+
+    def __enter__(self) -> Database:
+        return self
+
+    def __exit__(self, *_exception: object) -> None:
+        self.close()
 
     def _migrate(self) -> None:
         connection = self.connection

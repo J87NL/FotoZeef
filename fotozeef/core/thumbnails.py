@@ -162,10 +162,11 @@ class ThumbnailWorker:
             self._pending.clear()
 
     def shutdown(self) -> None:
+        """Waits for in-flight renders: their callbacks reach into Qt objects."""
         with self._lock:
             self._closed = True
             self._pending.clear()
-        self._executor.shutdown(wait=False, cancel_futures=True)
+        self._executor.shutdown(wait=True, cancel_futures=True)
 
     def _pump(self) -> None:
         while True:
@@ -190,11 +191,15 @@ class ThumbnailWorker:
         try:
             path = self._cache.get_or_create(request)
         except Exception as error:
-            if self._on_failed is not None:
+            if self._on_failed is not None and not self._is_closed():
                 self._on_failed(request, error)
             return
-        if self._on_ready is not None:
+        if self._on_ready is not None and not self._is_closed():
             self._on_ready(request, path)
+
+    def _is_closed(self) -> bool:
+        with self._lock:
+            return self._closed
 
     def _finish(self, key: tuple[int, int]) -> None:
         with self._lock:

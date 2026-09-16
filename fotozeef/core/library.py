@@ -73,6 +73,9 @@ class Library:
         self.photos = PhotoRepository(db)
         self.selections = SelectionRepository(db)
 
+    def close(self) -> None:
+        self._db.close()
+
     def create_project(
         self,
         name: str,
