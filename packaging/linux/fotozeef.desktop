@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FotoZeef
+GenericName=Photo culling
+Comment=Fast keyboard-driven culling of photo shoots
+Exec=FotoZeef
+Icon=fotozeef
+Categories=Graphics;Photography;
+Terminal=false
+StartupWMClass=FotoZeef

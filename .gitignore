@@ -8,3 +8,4 @@ dist/
 *.egg-info/
 *.spec.bak
 .DS_Store
+packaging/windows/Output/

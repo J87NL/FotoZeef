@@ -11,6 +11,9 @@ APP_VERSION = "0.1.0"
 
 DATABASE_FILENAME = "fotozeef.sqlite"
 
+RESOURCES_DIR = Path(__file__).resolve().parent / "resources"
+ICON_PATH = RESOURCES_DIR / "icon.png"
+
 
 def data_dir() -> Path:
     return Path(platformdirs.user_data_dir(APP_NAME, APP_AUTHOR))
