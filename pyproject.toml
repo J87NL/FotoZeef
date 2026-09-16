@@ -1,0 +1,54 @@
+[project]
+name = "fotozeef"
+version = "0.1.0"
+description = "Fast keyboard-driven culling of photo shoots"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "ComfyCoders" }]
+dependencies = [
+    "PySide6>=6.7",
+    "Pillow>=10.3",
+    "pillow-heif>=0.16",
+    "rawpy>=0.21",
+    "exifread>=3.0",
+    "platformdirs>=4.2",
+]
+
+[project.scripts]
+fotozeef = "fotozeef.app:main"
+
+[project.gui-scripts]
+fotozeef-gui = "fotozeef.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "pyinstaller>=6.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fotozeef"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "RUF"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
