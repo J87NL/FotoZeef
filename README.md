@@ -92,17 +92,21 @@ See `packaging/`. CI builds all three platforms on tags:
 - macOS: `.app` via PyInstaller (codesigning/notarisation hooks are present but unused)
 - Windows: PyInstaller onedir plus an Inno Setup installer
 
-## Open decisions
+## Decisions
 
-These are still open from the handoff and are implemented with the documented
-default; each is noted here so the choice stays visible.
-
-1. **App name / bundle id** — `FotoZeef`, `nl.j87.FotoZeef`. All identity strings
-   live in `fotozeef/appinfo.py`; renaming is a one-file change.
-2. **Reject flow** — not implemented. Selection is binary, as §13 of the handoff
-   requires. Adding a rejected state means a schema bump (`SCHEMA_VERSION` in
-   `core/db.py` already carries the migration hook) and a `Delete` binding.
-3. **Copy vs move vs hardlink** — copy (`shutil.copy2`).
-4. **XMP sidecars** — shipped, off by default, per-project setting.
-5. **Recursive scanning** — on by default, per-project setting.
-6. **`copy_raw_sidecar`** — on by default, per-project setting.
+1. **App name / bundle id** — `FotoZeef`, `nl.j87.FotoZeef`. Settled. Both live in
+   `fotozeef/appinfo.py`, which the PyInstaller spec reads, so there is one source
+   of truth for the macOS bundle identifier and the app name.
+2. **Selection is binary** — in or out. Settled. No rejected state, no star counts,
+   no colour labels. `Delete` is deliberately unbound.
+3. **Copy, never move** — `shutil.copy2` into the destination. Settled. The source
+   folders are left alone; `tests/test_sources_untouched.py` fingerprints the whole
+   source tree and asserts a full select/deselect cycle leaves it byte-identical.
+   The destination is excluded from scanning, so a `selectie/` folder inside a
+   source never reappears in the timeline.
+4. **Recursive scanning** — on by default, per-project setting.
+5. **`copy_raw_sidecar`** — on by default, per-project setting.
+6. **XMP sidecars** — shipped but **off by default**, per-project setting. This is
+   the one feature that writes into a source folder (a `.xmp` next to the original,
+   removed again on deselect if this app wrote it). Everything else treats the
+   source folders as read-only. Say the word if it should not be offered at all.

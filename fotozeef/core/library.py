@@ -102,7 +102,11 @@ class Library:
         summary = ScanSummary()
         for source in self.sources.list(project_id):
             source_summary = self.refresh_source(
-                source, project.settings, should_cancel, on_progress
+                source,
+                project.settings,
+                should_cancel,
+                on_progress,
+                exclude=(project.destination,),
             )
             summary.added += source_summary.added
             summary.missing += source_summary.missing
@@ -136,6 +140,7 @@ class Library:
         settings: ProjectSettings,
         should_cancel: Callable[[], bool] | None = None,
         on_progress: Callable[[str, int], None] | None = None,
+        exclude: Iterable[Path] = (),
     ) -> ScanSummary:
         summary = ScanSummary()
         if not source.path.is_dir():
@@ -149,6 +154,7 @@ class Library:
             recursive=settings.recursive,
             should_cancel=should_cancel,
             on_progress=(lambda count: on_progress(source.label, count)) if on_progress else None,
+            exclude=exclude,
         )
         summary.skipped_videos = report.skipped_videos
         if report.skipped_videos:

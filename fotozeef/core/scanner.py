@@ -65,13 +65,15 @@ def scan(
     recursive: bool = True,
     should_cancel: Callable[[], bool] | None = None,
     on_progress: Callable[[int], None] | None = None,
+    exclude: Iterable[Path] = (),
 ) -> ScanReport:
+    """Walks a source folder. `exclude` prunes subtrees, such as the destination."""
     report = ScanReport()
     files: list[ScannedFile] = []
     if should_cancel is not None and should_cancel():
         report.cancelled = True
         return report
-    for entry in _walk(root, recursive):
+    for entry in _walk(root, recursive, _resolve_all(exclude)):
         if should_cancel is not None and should_cancel():
             report.cancelled = True
             return report
@@ -129,6 +131,15 @@ def group_raw_pairs(files: Iterable[ScannedFile]) -> Iterator[ScannedGroup]:
         )
 
 
+def _is_excluded(directory: Path, excluded: frozenset[Path]) -> bool:
+    if not excluded:
+        return False
+    try:
+        return directory.resolve() in excluded
+    except OSError:
+        return False
+
+
 def _pick_display_file(bucket: list[ScannedFile]) -> ScannedFile:
     for preference in _DISPLAY_PREFERENCE:
         for item in bucket:
@@ -137,7 +148,17 @@ def _pick_display_file(bucket: list[ScannedFile]) -> ScannedFile:
     return bucket[0]
 
 
-def _walk(root: Path, recursive: bool) -> Iterator[Path]:
+def _resolve_all(paths: Iterable[Path]) -> frozenset[Path]:
+    resolved = set()
+    for path in paths:
+        try:
+            resolved.add(path.resolve())
+        except OSError:
+            continue
+    return frozenset(resolved)
+
+
+def _walk(root: Path, recursive: bool, excluded: frozenset[Path] = frozenset()) -> Iterator[Path]:
     if not recursive:
         try:
             entries = sorted(root.iterdir())
@@ -150,8 +171,12 @@ def _walk(root: Path, recursive: bool) -> Iterator[Path]:
         return
 
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
         directory = Path(dirpath)
+        dirnames[:] = sorted(
+            name
+            for name in dirnames
+            if not name.startswith(".") and not _is_excluded(directory / name, excluded)
+        )
         for filename in sorted(filenames):
             if filename.startswith("."):
                 continue

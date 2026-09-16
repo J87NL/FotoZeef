@@ -7,8 +7,9 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_dynamic_libs
 
 ROOT = Path(SPECPATH).parent
-APP_NAME = "FotoZeef"
-BUNDLE_ID = "nl.j87.FotoZeef"
+sys.path.insert(0, str(ROOT))
+
+from fotozeef.appinfo import APP_BUNDLE_ID, APP_NAME, APP_VERSION
 
 binaries = collect_dynamic_libs("pillow_heif") + collect_dynamic_libs("rawpy")
 
@@ -63,11 +64,11 @@ if sys.platform == "darwin":
     app = BUNDLE(
         collection,
         name=f"{APP_NAME}.app",
-        bundle_identifier=BUNDLE_ID,
+        bundle_identifier=APP_BUNDLE_ID,
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": APP_NAME,
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": APP_VERSION,
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
             "NSDesktopFolderUsageDescription": "FotoZeef reads the photo folders you choose.",

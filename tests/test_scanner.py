@@ -58,3 +58,21 @@ def test_scan_is_cancellable(tmp_path: Path, jpeg_factory) -> None:
 
     assert report.cancelled
     assert report.groups == []
+
+
+def test_excluded_folders_are_pruned(tmp_path: Path, jpeg_factory) -> None:
+    jpeg_factory(tmp_path / "keep.jpg")
+    jpeg_factory(tmp_path / "selectie" / "keep.jpg")
+    jpeg_factory(tmp_path / "selectie" / "deeper" / "keep.jpg")
+
+    report = scan(tmp_path, exclude=[tmp_path / "selectie"])
+
+    assert [group.primary.relative_path for group in report.groups] == ["keep.jpg"]
+
+
+def test_excluding_a_folder_that_does_not_exist_is_harmless(tmp_path: Path, jpeg_factory) -> None:
+    jpeg_factory(tmp_path / "keep.jpg")
+
+    report = scan(tmp_path, exclude=[tmp_path / "nothing-here"])
+
+    assert len(report.groups) == 1
