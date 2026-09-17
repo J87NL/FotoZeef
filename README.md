@@ -230,6 +230,38 @@ git tag v0.1.0 && git push origin v0.1.0
 [uv]: https://docs.astral.sh/uv/
 [Inno Setup]: https://jrsoftware.org/isinfo.php
 
+## Size
+
+Measured on this machine for Linux; the build workflow prints the same table
+per platform into the run summary when you tag a release.
+
+| | |
+|---|---|
+| Unpacked folder | 223 MB |
+| AppImage (what you download) | 73 MB |
+
+Most of it is not FotoZeef. The spec drops the half of Qt the app never touches
+(QML, Quick, Pdf, Network, the GTK platform theme, OpenSSL, every Qt
+translation but the ones shipped), which took the folder from 267 to 223 MB and
+the AppImage from 88 to 73 MB. What remains is hard to shed:
+
+| | | |
+|---|---|---|
+| Qt + ICU | 90 MB | `libicudata` alone is 31 MB and Qt will not start without it |
+| NumPy + OpenBLAS | 41 MB | a hard `NEEDED` of NumPy's C extension, which `rawpy` imports |
+| libheif + libx265 | 26 MB | `libheif` hard-links the x265 encoder; drop it and HEIC stops working |
+| Pillow codecs | 11 MB | |
+
+Dropping HEIC support would save about 26 MB and remove the GPL-2.0 component
+in one move — see `THIRD_PARTY.md`.
+
+## Licensing
+
+FotoZeef's own code is MIT; see `LICENSE`. The packaged builds bundle Qt
+(LGPL-3.0), LibRaw (LGPL-2.1), libheif and libde265 (LGPL-3.0) and **libx265
+(GPL-2.0)**. `THIRD_PARTY.md` lists everything and spells out what that means
+before publishing installers. Running it yourself triggers none of it.
+
 ## Decisions
 
 1. **App name / bundle id** — `FotoZeef`, `nl.j87.FotoZeef`. Settled. Both live in

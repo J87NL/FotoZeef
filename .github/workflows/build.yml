@@ -30,6 +30,14 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
 
+      - name: Report size
+        run: |
+          echo "### Linux" >> "$GITHUB_STEP_SUMMARY"
+          echo "| what | size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| unpacked folder | $(du -sh dist/FotoZeef | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| AppImage (download) | $(du -h dist/*.AppImage | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: fotozeef-linux-appimage
@@ -55,6 +63,14 @@ jobs:
 
       - name: Compress the bundle
         run: ditto -c -k --keepParent dist/FotoZeef.app dist/FotoZeef-macos.zip
+
+      - name: Report size
+        run: |
+          echo "### macOS" >> "$GITHUB_STEP_SUMMARY"
+          echo "| what | size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| .app bundle | $(du -sh dist/FotoZeef.app | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| zip (download) | $(du -h dist/FotoZeef-macos.zip | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,6 +104,17 @@ jobs:
           }
           & $iscc packaging\windows\installer.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Report size
+        shell: pwsh
+        run: |
+          $folder = (Get-ChildItem dist\FotoZeef -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          $setup = (Get-ChildItem packaging\windows\Output\*.exe | Measure-Object Length -Sum).Sum / 1MB
+          "### Windows"                                          | Add-Content $env:GITHUB_STEP_SUMMARY
+          "| what | size |"                                      | Add-Content $env:GITHUB_STEP_SUMMARY
+          "|---|---|"                                            | Add-Content $env:GITHUB_STEP_SUMMARY
+          ("| unpacked folder | {0:N0} MB |" -f $folder)         | Add-Content $env:GITHUB_STEP_SUMMARY
+          ("| installer (download) | {0:N0} MB |" -f $setup)     | Add-Content $env:GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:

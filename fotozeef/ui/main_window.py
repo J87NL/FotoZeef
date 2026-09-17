@@ -29,6 +29,7 @@ from fotozeef.appinfo import APP_NAME
 from fotozeef.core.library import Library, ProjectState
 from fotozeef.core.models import TimelineEntry
 from fotozeef.core.thumbnails import ThumbnailCache
+from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
 from fotozeef.ui.full_image import FullImageLoader
 from fotozeef.ui.offset_dialog import OffsetDialog
@@ -379,6 +380,12 @@ class MainWindow(QMainWindow):
         self._add(view_menu, self.tr("&Actual size"), "1", self.zoom_to_actual_size)
         view_menu.addSeparator()
         self._build_language_menu(view_menu.addMenu(self.tr("&Language")))
+
+        help_menu = self.menuBar().addMenu(self.tr("&Help"))
+        self._add(help_menu, self.tr("&About {0}").format(APP_NAME), None, self.show_about)
+
+    def show_about(self) -> None:
+        AboutDialog(self).exec()
 
     def _build_language_menu(self, menu: QMenu) -> None:
         group = QActionGroup(menu)
