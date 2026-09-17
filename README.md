@@ -6,14 +6,49 @@ copied into a destination folder; originals are never touched.
 
 Runs on Linux, macOS and Windows. Fully local: no account, no cloud, no telemetry.
 
-## Install
+## Run it
+
+### The AppImage (nothing to install)
+
+Download `FotoZeef-x86_64.AppImage`, make it executable, run it:
+
+```bash
+chmod +x FotoZeef-x86_64.AppImage
+./FotoZeef-x86_64.AppImage
+```
+
+It carries its own Python, Qt, libheif and libraw. The only thing it takes from
+the machine is the graphics stack (`libegl1`, `libgl1`), which every Ubuntu
+desktop already has — those deliberately are not bundled, because they must
+match the host's drivers.
+
+### From source
 
 ```bash
 uv sync
 uv run fotozeef
 ```
 
-Requires Python 3.12 or newer.
+Python 3.12 or newer. On Ubuntu, Qt 6 needs a few system libraries that a
+desktop install does not necessarily have — `libxcb-cursor0` in particular is
+missing on 22.04 and later, and without it Qt fails with *"could not load the
+Qt platform plugin xcb"*:
+
+```bash
+sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libfontconfig1 \
+  libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xkb1 \
+  libxcb-randr0 libxcb-render-util0 libdbus-1-3
+```
+
+### First run
+
+There is no project yet, so the window opens empty. *Project ▸ New project…*,
+add one or more folders, and leave the destination blank to get
+`<first folder>/selectie`. Then arrow keys to move, space to keep.
+
+Its own files live in `~/.local/share/FotoZeef/` (the database) and
+`~/.cache/FotoZeef/` (thumbnails). Delete those to start over; your photos are
+never in there.
 
 ## Keyboard
 
