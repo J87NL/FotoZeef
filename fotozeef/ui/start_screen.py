@@ -117,7 +117,7 @@ class StartScreen(QWidget):
         heading_font.setWeight(QFont.Weight.DemiBold)
         heading.setFont(heading_font)
 
-        self._subtitle = QLabel(self.tr("Fast culling of photo shoots"), self)
+        self._subtitle = QLabel(self.tr("Quickly sort through your photos."), self)
         self._subtitle.setObjectName("startSubtitle")
 
         icon = QLabel(self)
@@ -196,7 +196,7 @@ class StartScreen(QWidget):
         )
 
     def retranslate(self) -> None:
-        self._subtitle.setText(self.tr("Fast culling of photo shoots"))
+        self._subtitle.setText(self.tr("Quickly sort through your photos."))
         self._new_button.setText(self.tr("New project…"))
         self._open_button.setText(self.tr("Open project…"))
         self._recent_label.setText(self.tr("Recent projects"))

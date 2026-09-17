@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from fotozeef.appinfo import SETTINGS_ORGANIZATION
 from fotozeef.core.db import Database
 from fotozeef.core.library import Library
 
@@ -23,7 +24,7 @@ def app(tmp_path_factory):
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     for scope in (QSettings.Scope.UserScope, QSettings.Scope.SystemScope):
         QSettings.setPath(QSettings.Format.IniFormat, scope, str(settings_dir))
-    QCoreApplication.setOrganizationName("ComfyCoders")
+    QCoreApplication.setOrganizationName(SETTINGS_ORGANIZATION)
     QCoreApplication.setApplicationName("FotoZeefTests")
 
     existing = QApplication.instance()

@@ -179,10 +179,12 @@ QSettings.setDefaultFormat(QSettings.Format.IniFormat)
 for scope in (QSettings.Scope.UserScope, QSettings.Scope.SystemScope):
     QSettings.setPath(QSettings.Format.IniFormat, scope, sys.argv[1])
 
-from fotozeef.appinfo import APP_AUTHOR, APP_NAME
+from fotozeef.appinfo import APP_NAME, SETTINGS_ORGANIZATION
 from fotozeef.ui.translations import SETTINGS_KEY
 
-stored = QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope, APP_AUTHOR, APP_NAME)
+stored = QSettings(
+    QSettings.Format.IniFormat, QSettings.Scope.UserScope, SETTINGS_ORGANIZATION, APP_NAME
+)
 stored.setValue(SETTINGS_KEY, "nl")
 stored.sync()
 

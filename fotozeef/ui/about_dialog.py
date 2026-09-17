@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
 
 from fotozeef.appinfo import (
     APP_AUTHOR,
-    APP_BUNDLE_ID,
     APP_NAME,
     APP_VERSION,
     ICON_PATH,
@@ -33,7 +32,7 @@ class AboutDialog(QDialog):
 
         tabs = QTabWidget(self)
         tabs.addTab(self._about_tab(), self.tr("About"))
-        tabs.addTab(self._shortcuts_tab(), self.tr("Keyboard"))
+        tabs.addTab(self._shortcuts_tab(), self.tr("Controls"))
         tabs.addTab(self._licenses_tab(), self.tr("Licenses"))
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=self)
@@ -68,24 +67,17 @@ class AboutDialog(QDialog):
         body = QTextBrowser(page)
         body.setOpenExternalLinks(True)
         body.setHtml(
-            "<p>{tagline}</p><p>{privacy}</p>"
+            "<p>{tagline}</p>"
             "<table cellpadding='3'>"
             "<tr><td><b>{version_label}</b></td><td>{version}</td></tr>"
-            "<tr><td><b>{id_label}</b></td><td><code>{bundle}</code></td></tr>"
             "<tr><td><b>{by_label}</b></td><td>{author}</td></tr>"
             "<tr><td><b>{license_label}</b></td><td>MIT</td></tr>"
             "<tr><td><b>{db_label}</b></td><td><code>{database}</code></td></tr>"
             "<tr><td><b>{cache_label}</b></td><td><code>{cache}</code></td></tr>"
             "</table>".format(
-                tagline=self.tr("Fast, keyboard-driven culling of photo shoots."),
-                privacy=self.tr(
-                    "Everything stays on this machine: no account, no cloud, no telemetry."
-                    " Your originals are only ever read, never moved or changed."
-                ),
+                tagline=self.tr("Quickly sort through your photos."),
                 version_label=self.tr("Version"),
                 version=APP_VERSION,
-                id_label=self.tr("Identifier"),
-                bundle=APP_BUNDLE_ID,
                 by_label=self.tr("By"),
                 author=APP_AUTHOR,
                 license_label=self.tr("License"),

@@ -133,8 +133,8 @@ test suite fast and leaves the door open for a CLI later.
 
 | What | Where |
 |---|---|
-| Database | `platformdirs.user_data_dir("FotoZeef", "ComfyCoders")/fotozeef.sqlite` |
-| Thumbnails | `platformdirs.user_cache_dir("FotoZeef", "ComfyCoders")` |
+| Database | `platformdirs.user_data_dir("FotoZeef")/fotozeef.sqlite` |
+| Thumbnails | `platformdirs.user_cache_dir("FotoZeef")` |
 
 One database for the whole installation, never next to the photos. The only thing
 written into a source folder is the optional XMP sidecar, which is off by default.

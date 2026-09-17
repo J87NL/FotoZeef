@@ -71,3 +71,21 @@ def test_the_help_menu_offers_about(app: QApplication, tmp_path: Path, library: 
     assert any("Help" in title for title in titles)
     assert hasattr(window, "show_about")
     window.close()
+
+
+def test_the_about_box_names_its_author_and_drops_the_bundle_id(app: QApplication) -> None:
+    dialog = AboutDialog()
+    text = " ".join(browser.toPlainText() for browser in dialog.findChildren(QTextBrowser))
+
+    assert "Johan Montenij" in text
+    assert "nl.j87.FotoZeef" not in text, "the bundle identifier is developer trivia"
+    assert "telemetry" not in text.lower()
+    dialog.close()
+
+
+def test_the_author_stays_out_of_filesystem_paths() -> None:
+    from fotozeef.appinfo import APP_AUTHOR, cache_dir, data_dir
+
+    assert " " not in str(data_dir()), "a name with a space has no business in a path"
+    assert APP_AUTHOR not in str(data_dir())
+    assert APP_AUTHOR not in str(cache_dir())

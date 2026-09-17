@@ -1,6 +1,6 @@
 #define AppName "FotoZeef"
 #define AppVersion "0.1.0"
-#define AppPublisher "ComfyCoders"
+#define AppPublisher "Johan Montenij"
 #define AppExe "FotoZeef.exe"
 
 [Setup]

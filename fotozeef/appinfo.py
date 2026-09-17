@@ -5,7 +5,8 @@ from pathlib import Path
 import platformdirs
 
 APP_NAME = "FotoZeef"
-APP_AUTHOR = "ComfyCoders"
+APP_AUTHOR = "Johan Montenij"
+SETTINGS_ORGANIZATION = "FotoZeef"
 APP_BUNDLE_ID = "nl.j87.FotoZeef"
 APP_VERSION = "0.1.0"
 
@@ -18,11 +19,11 @@ THIRD_PARTY_PATH = RESOURCES_DIR / "THIRD_PARTY.md"
 
 
 def data_dir() -> Path:
-    return Path(platformdirs.user_data_dir(APP_NAME, APP_AUTHOR))
+    return Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
 
 
 def cache_dir() -> Path:
-    return Path(platformdirs.user_cache_dir(APP_NAME, APP_AUTHOR))
+    return Path(platformdirs.user_cache_dir(APP_NAME, appauthor=False))
 
 
 def database_path() -> Path:

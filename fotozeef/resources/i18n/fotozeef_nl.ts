@@ -4,132 +4,122 @@
     <context>
         <name>AboutDialog</name>
         <message>
-            <location filename="../../ui/about_dialog.py" line="31" />
+            <location filename="../../ui/about_dialog.py" line="30" />
             <source>About {0}</source>
             <translation>Over {0}</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="35" />
+            <location filename="../../ui/about_dialog.py" line="34" />
             <source>About</source>
             <translation>Over</translation>
         </message>
         <message>
             <location filename="../../ui/about_dialog.py" line="36" />
-            <source>Keyboard</source>
-            <translation>Toetsenbord</translation>
-        </message>
-        <message>
-            <location filename="../../ui/about_dialog.py" line="37" />
             <source>Licenses</source>
             <translation>Licenties</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="80" />
-            <source>Fast, keyboard-driven culling of photo shoots.</source>
-            <translation>Snel schiften van fotoshoots, volledig met het toetsenbord.</translation>
-        </message>
-        <message>
-            <location filename="../../ui/about_dialog.py" line="82" />
-            <source>Everything stays on this machine: no account, no cloud, no telemetry. Your originals are only ever read, never moved or changed.</source>
-            <translation>Alles blijft op deze computer: geen account, geen cloud, geen telemetrie. Je originelen worden alleen gelezen, nooit verplaatst of gewijzigd.</translation>
-        </message>
-        <message>
-            <location filename="../../ui/about_dialog.py" line="85" />
+            <location filename="../../ui/about_dialog.py" line="79" />
             <source>Version</source>
             <translation>Versie</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="87" />
-            <source>Identifier</source>
-            <translation>Identificatie</translation>
+            <location filename="../../ui/about_dialog.py" line="35" />
+            <source>Controls</source>
+            <translation>Bediening</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="89" />
+            <location filename="../../ui/about_dialog.py" line="78" />
+            <source>Quickly sort through your photos.</source>
+            <translation>Snel je foto's uitzoeken.</translation>
+        </message>
+        <message>
+            <location filename="../../ui/about_dialog.py" line="81" />
             <source>By</source>
             <translation>Door</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="91" />
+            <location filename="../../ui/about_dialog.py" line="83" />
             <source>License</source>
             <translation>Licentie</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="92" />
+            <location filename="../../ui/about_dialog.py" line="84" />
             <source>Database</source>
             <translation>Database</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="94" />
+            <location filename="../../ui/about_dialog.py" line="86" />
             <source>Thumbnails</source>
             <translation>Miniaturen</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="111" />
+            <location filename="../../ui/about_dialog.py" line="103" />
             <source>Previous / next photo</source>
             <translation>Vorige / volgende foto</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="112" />
+            <location filename="../../ui/about_dialog.py" line="104" />
             <source>Keep or unkeep the current photo</source>
             <translation>Huidige foto houden of loslaten</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="113" />
+            <location filename="../../ui/about_dialog.py" line="105" />
             <source>First / last photo</source>
             <translation>Eerste / laatste foto</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="114" />
+            <location filename="../../ui/about_dialog.py" line="106" />
             <source>Jump ten photos</source>
             <translation>Tien foto's verspringen</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="115" />
+            <location filename="../../ui/about_dialog.py" line="107" />
             <source>Zoom in / out</source>
             <translation>In- / uitzoomen</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="116" />
+            <location filename="../../ui/about_dialog.py" line="108" />
             <source>Fit to window</source>
             <translation>Passend in venster</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="117" />
+            <location filename="../../ui/about_dialog.py" line="109" />
             <source>Actual size</source>
             <translation>Werkelijke grootte</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="118" />
+            <location filename="../../ui/about_dialog.py" line="110" />
             <source>Wheel, drag, double click</source>
             <translation>Wiel, slepen, dubbelklik</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="118" />
+            <location filename="../../ui/about_dialog.py" line="110" />
             <source>Zoom around the pointer, pan, toggle</source>
             <translation>Zoomen rond de muis, verschuiven, wisselen</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="119" />
+            <location filename="../../ui/about_dialog.py" line="111" />
             <source>Fullscreen</source>
             <translation>Volledig scherm</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="120" />
+            <location filename="../../ui/about_dialog.py" line="112" />
             <source>Unzoom, then leave fullscreen</source>
             <translation>Uitzoomen, daarna volledig scherm verlaten</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="121" />
+            <location filename="../../ui/about_dialog.py" line="113" />
             <source>New / open / close project</source>
             <translation>Project nieuw / openen / sluiten</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="122" />
+            <location filename="../../ui/about_dialog.py" line="114" />
             <source>Project settings</source>
             <translation>Projectinstellingen</translation>
         </message>
         <message>
-            <location filename="../../ui/about_dialog.py" line="141" />
+            <location filename="../../ui/about_dialog.py" line="133" />
             <source>The third-party notice is missing from this build.</source>
             <translation>De licentievermelding van derden ontbreekt in deze build.</translation>
         </message>
@@ -540,8 +530,8 @@ Al gekopieerde foto's blijven staan waar ze staan. Doorgaan?</translation>
         <message>
             <location filename="../../ui/start_screen.py" line="120" />
             <location filename="../../ui/start_screen.py" line="199" />
-            <source>Fast culling of photo shoots</source>
-            <translation>Snel schiften van fotoshoots</translation>
+            <source>Quickly sort through your photos.</source>
+            <translation>Snel je foto's uitzoeken.</translation>
         </message>
         <message>
             <location filename="../../ui/start_screen.py" line="145" />

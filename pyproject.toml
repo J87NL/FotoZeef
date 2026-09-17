@@ -5,7 +5,7 @@ description = "Fast keyboard-driven culling of photo shoots"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "ComfyCoders" }]
+authors = [{ name = "Johan Montenij" }]
 dependencies = [
     "PySide6>=6.7",
     "Pillow>=10.3",

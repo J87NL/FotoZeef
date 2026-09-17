@@ -12,10 +12,10 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from fotozeef.appinfo import (
-    APP_AUTHOR,
     APP_NAME,
     APP_VERSION,
     ICON_PATH,
+    SETTINGS_ORGANIZATION,
     cache_dir,
     database_path,
 )
@@ -35,7 +35,7 @@ def build_application(argv: list[str]) -> QApplication:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setOrganizationName(APP_AUTHOR)
+    app.setOrganizationName(SETTINGS_ORGANIZATION)
     app.setDesktopFileName("fotozeef")
     install_translations(app)
     if ICON_PATH.is_file():
