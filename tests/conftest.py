@@ -14,8 +14,17 @@ os.environ["QT_QPA_PLATFORM"] = os.environ.get("QT_QPA_PLATFORM") or "offscreen"
 
 
 @pytest.fixture(scope="session")
-def app():
+def app(tmp_path_factory):
+    """Keeps QSettings inside the test run: the language choice is persisted."""
+    from PySide6.QtCore import QCoreApplication, QSettings
     from PySide6.QtWidgets import QApplication
+
+    settings_dir = tmp_path_factory.mktemp("settings")
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    for scope in (QSettings.Scope.UserScope, QSettings.Scope.SystemScope):
+        QSettings.setPath(QSettings.Format.IniFormat, scope, str(settings_dir))
+    QCoreApplication.setOrganizationName("ComfyCoders")
+    QCoreApplication.setApplicationName("FotoZeefTests")
 
     existing = QApplication.instance()
     if existing is not None:

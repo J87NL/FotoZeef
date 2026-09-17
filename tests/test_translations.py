@@ -155,3 +155,10 @@ def test_a_saved_choice_beats_the_system_locale(app: QApplication, monkeypatch) 
             settings.remove(SETTINGS_KEY)
         else:
             settings.setValue(SETTINGS_KEY, previous)
+
+
+def test_tests_do_not_write_to_real_user_settings(app: QApplication, tmp_path_factory) -> None:
+    settings = QSettings()
+
+    assert settings.format() == QSettings.Format.IniFormat
+    assert "settings" in settings.fileName(), settings.fileName()
