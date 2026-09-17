@@ -83,11 +83,32 @@ def test_the_about_box_names_its_author_and_drops_the_bundle_id(app: QApplicatio
     dialog.close()
 
 
-def test_the_author_stays_out_of_filesystem_paths() -> None:
-    """Only the folder FotoZeef adds is ours; the base is the platform's."""
-    from fotozeef.appinfo import APP_AUTHOR, APP_NAME, cache_dir, data_dir
+def _assert_ours(directory: Path) -> None:
+    """The base belongs to the platform; everything from FotoZeef down is ours."""
+    from fotozeef.appinfo import APP_AUTHOR, APP_NAME
 
-    for directory in (data_dir(), cache_dir()):
-        assert APP_AUTHOR not in str(directory)
-        assert directory.name == APP_NAME
-        assert " " not in directory.name
+    parts = directory.parts
+    assert APP_AUTHOR not in str(directory), f"the author's name leaked into {directory}"
+    assert APP_NAME in parts, f"{directory} does not sit under {APP_NAME}"
+    ours = parts[parts.index(APP_NAME) :]
+    assert all(" " not in part for part in ours), f"a space in a folder we chose: {ours}"
+
+
+def test_the_author_stays_out_of_filesystem_paths() -> None:
+    from fotozeef.appinfo import cache_dir, data_dir
+
+    _assert_ours(data_dir())
+    _assert_ours(cache_dir())
+
+
+def test_the_layout_holds_on_the_platforms_this_machine_can_compute() -> None:
+    """Windows resolves its folders through the Win32 API, so CI covers that one."""
+    from platformdirs.macos import MacOS
+    from platformdirs.unix import Unix
+
+    from fotozeef.appinfo import APP_NAME
+
+    for platform in (Unix, MacOS):
+        dirs = platform(appname=APP_NAME, appauthor=False)
+        _assert_ours(Path(dirs.user_data_dir))
+        _assert_ours(Path(dirs.user_cache_dir))
