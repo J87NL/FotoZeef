@@ -13,6 +13,7 @@ from fotozeef.core.thumbnails import (
     ThumbnailWorker,
     cache_key,
     render,
+    render_full,
 )
 
 
@@ -117,3 +118,24 @@ def test_worker_reports_failures(tmp_path: Path) -> None:
 
     assert failed.wait(30)
     worker.shutdown()
+
+
+def test_render_full_keeps_the_original_resolution(tmp_path: Path, jpeg_factory) -> None:
+    path = jpeg_factory(tmp_path / "big.jpg", size=(1600, 900))
+
+    payload, width, height = render_full(path)
+
+    assert (width, height) == (1600, 900)
+    assert len(payload) == width * height * 3
+
+
+def test_render_full_applies_orientation(tmp_path: Path) -> None:
+    path = tmp_path / "rotated.jpg"
+    image = Image.new("RGB", (400, 200), (10, 20, 30))
+    exif = image.getexif()
+    exif[274] = 6
+    image.save(path, format="JPEG", exif=exif)
+
+    _payload, width, height = render_full(path)
+
+    assert (width, height) == (200, 400)

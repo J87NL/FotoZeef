@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QSize, Qt, Signal
 from PySide6.QtGui import QPixmap
 
 from fotozeef.core.models import TimelineEntry
@@ -17,6 +17,7 @@ from fotozeef.core.thumbnails import (
 
 _FILMSTRIP_CACHE_ENTRIES = 900
 _PREVIEW_CACHE_ENTRIES = 16
+_SCALED_CACHE_ENTRIES = 600
 
 
 class ThumbnailService(QObject):
@@ -36,6 +37,7 @@ class ThumbnailService(QObject):
         self._scale = max(1.0, scale)
         self._paths: dict[tuple[int, int], Path] = {}
         self._pixmaps: OrderedDict[tuple[int, int], QPixmap] = OrderedDict()
+        self._scaled: OrderedDict[tuple[int, int, int, int], QPixmap] = OrderedDict()
         self._worker = ThumbnailWorker(
             cache,
             max_workers=max_workers,
@@ -61,6 +63,7 @@ class ThumbnailService(QObject):
         self._worker.drop_pending()
         self._paths.clear()
         self._pixmaps.clear()
+        self._scaled.clear()
 
     def shutdown(self) -> None:
         self._worker.shutdown()
@@ -78,6 +81,33 @@ class ThumbnailService(QObject):
                 return None
             self._paths[key] = path
         return self._load(key, path)
+
+    def scaled_pixmap(self, entry: TimelineEntry, target: int, size: QSize) -> QPixmap | None:
+        """Rescaling on every paint is what makes a long filmstrip stutter."""
+        key = (entry.photo.id, target, size.width(), size.height())
+        cached = self._scaled.get(key)
+        if cached is not None:
+            self._scaled.move_to_end(key)
+            return cached
+        base = self.pixmap(entry, target)
+        if base is None:
+            return None
+        ratio = base.devicePixelRatio()
+        scaled = base.scaled(
+            size * ratio,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        scaled.setDevicePixelRatio(ratio)
+        self._scaled[key] = scaled
+        self._scaled.move_to_end(key)
+        while len(self._scaled) > _SCALED_CACHE_ENTRIES:
+            self._scaled.popitem(last=False)
+        return scaled
+
+    def forget(self, photo_id: int) -> None:
+        for key in [key for key in self._scaled if key[0] == photo_id]:
+            self._scaled.pop(key, None)
 
     def request(self, entry: TimelineEntry, target: int) -> None:
         key = (entry.photo.id, target)

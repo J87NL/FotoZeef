@@ -15,6 +15,8 @@ from fotozeef.core.scanner import RAW_EXTENSIONS
 FILMSTRIP_SIZE = 200
 PREVIEW_SIZE = 2048
 JPEG_QUALITY = 85
+MAX_FULL_PIXELS = 60_000_000
+MAX_FULL_EDGE = 8192
 
 
 class ThumbnailSize(IntEnum):
@@ -90,6 +92,20 @@ def render(request: ThumbnailRequest) -> bytes:
         buffer = io.BytesIO()
         image.save(buffer, format="JPEG", quality=JPEG_QUALITY, optimize=True)
     return buffer.getvalue()
+
+
+def render_full(path: Path) -> tuple[bytes, int, int]:
+    """Full-resolution RGB888 for zooming. RAW still comes from its embedded preview."""
+    register_codecs()
+    from PIL import Image, ImageOps
+
+    source = _open_raw_preview(path) if path.suffix.lower() in RAW_EXTENSIONS else Image.open(path)
+    with source:
+        image = ImageOps.exif_transpose(source) or source
+        image = image.convert("RGB")
+        if image.width * image.height > MAX_FULL_PIXELS:
+            image.thumbnail((MAX_FULL_EDGE, MAX_FULL_EDGE), Image.Resampling.LANCZOS)
+        return image.tobytes(), image.width, image.height
 
 
 def _open_for_thumbnail(request: ThumbnailRequest):  # noqa: ANN202

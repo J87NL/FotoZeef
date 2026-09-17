@@ -13,6 +13,16 @@ from fotozeef.core.library import Library
 os.environ["QT_QPA_PLATFORM"] = os.environ.get("QT_QPA_PLATFORM") or "offscreen"
 
 
+@pytest.fixture(scope="session")
+def app():
+    from PySide6.QtWidgets import QApplication
+
+    existing = QApplication.instance()
+    if existing is not None:
+        return existing
+    return QApplication([])
+
+
 @pytest.fixture
 def db(tmp_path: Path) -> Database:
     return Database(tmp_path / "state" / "test.sqlite")

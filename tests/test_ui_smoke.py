@@ -14,14 +14,6 @@ from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.main_window import MainWindow
 
 
-@pytest.fixture(scope="session")
-def app() -> QApplication:
-    existing = QApplication.instance()
-    if existing is not None:
-        return existing
-    return QApplication([])
-
-
 @pytest.fixture
 def window(app: QApplication, tmp_path: Path, library: Library, jpeg_factory) -> MainWindow:
     source = tmp_path / "cam"
@@ -211,3 +203,98 @@ def test_forgetting_another_project_leaves_the_open_one_alone(
     assert window._state is not None
     assert window._state.project.id == open_id
     assert window._model.rowCount() == 5
+
+
+def test_leaving_fullscreen_restores_every_piece_of_chrome(window: MainWindow) -> None:
+    window.toggle_fullscreen()
+    assert not window._filmstrip.isVisible()
+
+    _press(window, Qt.Key.Key_Escape)
+
+    assert window.menuBar().isVisible()
+    assert window.statusBar().isVisible()
+    assert window._filmstrip.isVisible()
+
+
+def test_f_toggles_fullscreen_both_ways(window: MainWindow) -> None:
+    _press(window, Qt.Key.Key_F)
+    assert not window._filmstrip.isVisible()
+
+    _press(window, Qt.Key.Key_F)
+    assert window._filmstrip.isVisible()
+    assert window.menuBar().isVisible()
+
+
+def test_fullscreen_says_how_to_leave(window: MainWindow) -> None:
+    window.toggle_fullscreen()
+
+    assert window._viewer._hint is not None
+    assert "Esc" in window._viewer._hint
+
+    window.leave_fullscreen()
+    assert window._viewer._hint is None
+
+
+def test_leaving_fullscreen_works_even_if_the_wm_ignored_it(window: MainWindow) -> None:
+    window.toggle_fullscreen()
+    window.showNormal()
+    assert not window.isFullScreen()
+
+    window.leave_fullscreen()
+
+    assert window.menuBar().isVisible()
+    assert window._filmstrip.isVisible()
+
+
+def test_the_start_screen_is_shown_when_nothing_is_open(
+    app: QApplication, tmp_path: Path, library: Library
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+
+    assert window._pages.currentWidget() is window._start_screen
+    assert window._start_screen._empty.isVisibleTo(window._start_screen)
+    window.close()
+
+
+def test_the_start_screen_lists_projects_and_opens_one(
+    app: QApplication, tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    source = tmp_path / "cam"
+    jpeg_factory(source / "a.jpg")
+    project = library.create_project("Bruiloft", [source], tmp_path / "out", ProjectSettings())
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+
+    assert window._start_screen._list.count() == 1
+    assert "Bruiloft" in window._start_screen._list.item(0).text()
+
+    window._on_project_opened(library.open_project(project.id))
+    assert window._pages.currentIndex() == 1
+    window.close()
+
+
+def test_closing_a_project_returns_to_the_start_screen(window: MainWindow) -> None:
+    assert window._pages.currentIndex() == 1
+
+    window.close_project()
+
+    assert window._state is None
+    assert window._pages.currentWidget() is window._start_screen
+    assert window._start_screen._list.count() == 1
+    assert window._model.rowCount() == 0
+
+
+def test_closing_a_project_keeps_the_cursor_for_next_time(window: MainWindow) -> None:
+    project_id = window._state.project.id
+    window.go_to(3)
+    photo_id = window._state.entries[3].photo.id
+
+    window.close_project()
+
+    assert window._library.projects.get(project_id).cursor_photo_id == photo_id
+
+
+def test_forgetting_the_open_project_lands_on_the_start_screen(window: MainWindow) -> None:
+    window.forget_project(window._state.project.id)
+
+    assert window._pages.currentWidget() is window._start_screen
+    assert window._start_screen._list.count() == 0

@@ -4,13 +4,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeyEvent, QKeySequence, QPixmap
+from PySide6.QtGui import QAction, QCloseEvent, QImage, QKeyEvent, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -20,10 +21,12 @@ from fotozeef.core.library import Library, ProjectState
 from fotozeef.core.models import TimelineEntry
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
+from fotozeef.ui.full_image import FullImageLoader
 from fotozeef.ui.offset_dialog import OffsetDialog
 from fotozeef.ui.open_dialog import OpenProjectDialog
 from fotozeef.ui.project_dialog import ProjectDialog
 from fotozeef.ui.settings_dialog import SettingsDialog
+from fotozeef.ui.start_screen import StartScreen
 from fotozeef.ui.tasks import ProjectOpener, SelectionQueue
 from fotozeef.ui.thumbnail_service import ThumbnailService
 from fotozeef.ui.viewer import Viewer
@@ -31,6 +34,7 @@ from fotozeef.ui.viewer import Viewer
 PREFETCH_RADIUS = 3
 PAGE_JUMP = 10
 CURSOR_SAVE_DELAY_MS = 400
+HINT_VISIBLE_MS = 3500
 
 
 class MainWindow(QMainWindow):
@@ -41,6 +45,7 @@ class MainWindow(QMainWindow):
         self._selected: set[int] = set()
         self._reference: TimelineEntry | None = None
         self._progress: QProgressDialog | None = None
+        self._fullscreen = False
 
         scale = self.screen().devicePixelRatio() if self.screen() is not None else 1.0
         self._service = ThumbnailService(cache, scale=scale, parent=self)
@@ -52,14 +57,29 @@ class MainWindow(QMainWindow):
         self._filmstrip = Filmstrip(self._model, self)
         self._filmstrip.cursor_moved.connect(self._on_filmstrip_cursor)
         self._viewer = Viewer(self)
+        self._viewer.zoom_changed.connect(self._on_zoom_changed)
 
-        central = QWidget(self)
-        layout = QVBoxLayout(central)
+        self._full_loader = FullImageLoader(self)
+        self._full_loader.loaded.connect(self._on_full_image)
+        self._full_loader.failed.connect(self._on_full_image_failed)
+        self._full: tuple[int, QPixmap] | None = None
+
+        culling = QWidget(self)
+        layout = QVBoxLayout(culling)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._viewer, 1)
         layout.addWidget(self._filmstrip)
-        self.setCentralWidget(central)
+
+        self._start_screen = StartScreen(self)
+        self._start_screen.new_requested.connect(self.new_project)
+        self._start_screen.browse_requested.connect(self.open_project)
+        self._start_screen.open_requested.connect(self._start_open)
+
+        self._pages = QStackedWidget(self)
+        self._pages.addWidget(self._start_screen)
+        self._pages.addWidget(culling)
+        self.setCentralWidget(self._pages)
 
         self._status = QLabel("", self)
         self.statusBar().addPermanentWidget(self._status)
@@ -77,16 +97,46 @@ class MainWindow(QMainWindow):
         self._cursor_timer.setInterval(CURSOR_SAVE_DELAY_MS)
         self._cursor_timer.timeout.connect(self._persist_cursor)
 
+        self._hint_timer = QTimer(self)
+        self._hint_timer.setSingleShot(True)
+        self._hint_timer.setInterval(HINT_VISIBLE_MS)
+        self._hint_timer.timeout.connect(lambda: self._viewer.show_hint(None))
+
         self.setWindowTitle(APP_NAME)
         self.resize(1280, 860)
         self._build_menu()
-        self._update_status()
+        self.show_start_screen()
 
     def open_last_project(self) -> None:
         projects = self._library.projects.list()
         if not projects:
             return
         self._start_open(projects[0].id)
+
+    def show_start_screen(self) -> None:
+        self._start_screen.set_projects(self._library.projects.list())
+        self._pages.setCurrentWidget(self._start_screen)
+        self._update_status()
+
+    def close_project(self) -> None:
+        if self._state is None:
+            return
+        self.leave_fullscreen()
+        self._cursor_timer.stop()
+        self._persist_cursor()
+        self._selection_queue.flush()
+        self._state = None
+        self._selected = set()
+        self._unreadable = set()
+        self._reference = None
+        self._full = None
+        self._full_loader.cancel()
+        self._viewer.zoom_to_fit()
+        self._service.clear()
+        self._model.set_entries(())
+        self._viewer.show_entry(None, None, False)
+        self.setWindowTitle(APP_NAME)
+        self.show_start_screen()
 
     def new_project(self) -> None:
         dialog = ProjectDialog(self)
@@ -112,17 +162,10 @@ class MainWindow(QMainWindow):
 
     def forget_project(self, project_id: int) -> None:
         self._library.projects.delete(project_id)
-        if self._state is None or self._state.project.id != project_id:
+        if self._state is not None and self._state.project.id == project_id:
+            self.close_project()
             return
-        self._selection_queue.flush()
-        self._state = None
-        self._selected = set()
-        self._unreadable = set()
-        self._reference = None
-        self._service.clear()
-        self._model.set_entries(())
-        self.setWindowTitle(APP_NAME)
-        self._render_current()
+        self._start_screen.set_projects(self._library.projects.list())
 
     def edit_settings(self) -> None:
         if self._state is None:
@@ -180,17 +223,24 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Time reference: {self._reference.photo.filename}", 4000)
 
     def toggle_fullscreen(self) -> None:
-        if self.isFullScreen():
+        if self._fullscreen:
             self.leave_fullscreen()
             return
+        self._fullscreen = True
         self.menuBar().setVisible(False)
         self.statusBar().setVisible(False)
         self._filmstrip.setVisible(False)
         self.showFullScreen()
+        self._viewer.show_hint(self.tr("Esc or F to leave fullscreen"))
+        self._hint_timer.start()
 
     def leave_fullscreen(self) -> None:
-        if not self.isFullScreen():
+        """Tracks its own flag: a window manager may not honour showFullScreen."""
+        if not self._fullscreen:
             return
+        self._fullscreen = False
+        self._hint_timer.stop()
+        self._viewer.show_hint(None)
         self.showNormal()
         self.menuBar().setVisible(True)
         self.statusBar().setVisible(True)
@@ -212,6 +262,18 @@ class MainWindow(QMainWindow):
             self._selection_queue.submit(photo_id, True, lambda: self._library.select(state, index))
             return
         self._selection_queue.submit(photo_id, False, lambda: self._library.deselect(state, index))
+
+    def zoom_in(self) -> None:
+        self._viewer.zoom_in()
+
+    def zoom_out(self) -> None:
+        self._viewer.zoom_out()
+
+    def zoom_to_fit(self) -> None:
+        self._viewer.zoom_to_fit()
+
+    def zoom_to_actual_size(self) -> None:
+        self._viewer.zoom_to_actual_size()
 
     def move_cursor(self, delta: int) -> None:
         if self._state is None or not self._state.entries:
@@ -239,8 +301,19 @@ class MainWindow(QMainWindow):
             self.move_cursor(-PAGE_JUMP)
         elif key == Qt.Key.Key_F:
             self.toggle_fullscreen()
+        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.zoom_in()
+        elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
+            self.zoom_out()
+        elif key == Qt.Key.Key_0:
+            self.zoom_to_fit()
+        elif key == Qt.Key.Key_1:
+            self.zoom_to_actual_size()
         elif key == Qt.Key.Key_Escape:
-            self.leave_fullscreen()
+            if self._viewer.zoomed:
+                self.zoom_to_fit()
+            else:
+                self.leave_fullscreen()
         else:
             super().keyPressEvent(event)
             return
@@ -252,6 +325,7 @@ class MainWindow(QMainWindow):
         self._opener.cancel()
         self._opener.wait()
         self._selection_queue.close()
+        self._full_loader.shutdown()
         self._service.shutdown()
         super().closeEvent(event)
 
@@ -262,6 +336,9 @@ class MainWindow(QMainWindow):
         )
         project_menu.addAction(
             self._action("&Open project…", QKeySequence.StandardKey.Open, self.open_project)
+        )
+        project_menu.addAction(
+            self._action("&Close project", QKeySequence.StandardKey.Close, self.close_project)
         )
         project_menu.addSeparator()
         project_menu.addAction(
@@ -276,6 +353,13 @@ class MainWindow(QMainWindow):
 
         view_menu = self.menuBar().addMenu("&View")
         view_menu.addAction(self._action("&Fullscreen", "F", self.toggle_fullscreen))
+        view_menu.addSeparator()
+        view_menu.addAction(self._action("Zoom &in", QKeySequence.StandardKey.ZoomIn, self.zoom_in))
+        view_menu.addAction(
+            self._action("Zoom &out", QKeySequence.StandardKey.ZoomOut, self.zoom_out)
+        )
+        view_menu.addAction(self._action("&Fit to window", "0", self.zoom_to_fit))
+        view_menu.addAction(self._action("&Actual size", "1", self.zoom_to_actual_size))
 
     def _action(
         self,
@@ -313,12 +397,14 @@ class MainWindow(QMainWindow):
         self._state = state
         self._reference = None
         self._unreadable = set()
+        self._full = None
         self._selected = set(state.selections)
         self._service.clear()
         self._model.set_entries(state.entries)
         self._model.set_selected(self._selected)
         self._service.set_positions(state.positions())
         self.setWindowTitle(f"{state.project.name} — {APP_NAME}")
+        self._pages.setCurrentIndex(1)
         self._set_cursor(state.cursor, persist=False)
         self._render_current()
         self._update_status()
@@ -361,9 +447,42 @@ class MainWindow(QMainWindow):
         self._filmstrip.set_cursor(state.cursor)
         self._service.set_cursor(state.cursor)
         self._render_current()
+        if self._viewer.zoomed:
+            self._request_full_image()
         self._prefetch()
         if persist:
             self._cursor_timer.start()
+
+    def _on_zoom_changed(self, zoom: float) -> None:
+        self._update_status()
+        if self._viewer.zoomed:
+            self._request_full_image()
+
+    def _request_full_image(self) -> None:
+        state = self._state
+        entry = state.current if state is not None else None
+        if entry is None or entry.photo.missing:
+            return
+        if self._full is not None and self._full[0] == entry.photo.id:
+            return
+        self._full_loader.request(entry.photo.id, entry.absolute_path)
+
+    def _on_full_image(self, photo_id: int, image: QImage) -> None:
+        state = self._state
+        entry = state.current if state is not None else None
+        if entry is None or entry.photo.id != photo_id:
+            return
+        self._full = (photo_id, QPixmap.fromImage(image))
+        self._render_current()
+
+    def _on_full_image_failed(self, photo_id: int, message: str) -> None:
+        state = self._state
+        entry = state.current if state is not None else None
+        if entry is None or entry.photo.id != photo_id:
+            return
+        self.statusBar().showMessage(
+            self.tr("Could not load this photo at full size: {0}").format(message), 6000
+        )
 
     def _render_current(self) -> None:
         state = self._state
@@ -376,10 +495,18 @@ class MainWindow(QMainWindow):
             )
             self._viewer.show_entry(None, None, False)
             return
-        pixmap = self._service.pixmap(entry, self._service.preview_target)
+        natural_width = 0
+        pixmap = None
+        if self._full is not None and self._full[0] == entry.photo.id:
+            pixmap = self._full[1]
+            natural_width = pixmap.width()
+        if pixmap is None:
+            pixmap = self._service.pixmap(entry, self._service.preview_target)
         if pixmap is None:
             pixmap = self._service.pixmap(entry, self._service.filmstrip_target)
-        self._viewer.show_entry(entry, pixmap, entry.photo.id in self._selected)
+        self._viewer.show_entry(
+            entry, pixmap, entry.photo.id in self._selected, natural_width=natural_width
+        )
         if pixmap is None and entry.photo.id in self._unreadable:
             self._viewer.show_message(self._unreadable_text(entry))
         self._update_status()
@@ -458,8 +585,9 @@ class MainWindow(QMainWindow):
         position = state.cursor + 1
         total = len(state.entries)
         destination = _short_path(state.project.destination)
+        zoom = f"    {self._viewer.zoom * 100:.0f}%" if self._viewer.zoomed else ""
         self._status.setText(
-            f"{position}/{total}    {len(self._selected)} selected    → {destination}"
+            f"{position}/{total}    {len(self._selected)} selected{zoom}    → {destination}"
         )
 
 

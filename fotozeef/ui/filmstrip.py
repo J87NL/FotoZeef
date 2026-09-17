@@ -29,6 +29,7 @@ ESTIMATED_ROLE = THUMBNAIL_ROLE + 3
 ITEM_WIDTH = 150
 ITEM_HEIGHT = 120
 ITEM_PADDING = 6
+THUMBNAIL_SIZE = QSize(ITEM_WIDTH - 2 * ITEM_PADDING, ITEM_HEIGHT - 2 * ITEM_PADDING)
 
 
 class FilmstripModel(QAbstractListModel):
@@ -83,7 +84,9 @@ class FilmstripModel(QAbstractListModel):
         if entry is None:
             return None
         if role == THUMBNAIL_ROLE:
-            return self._service.pixmap(entry, self._service.filmstrip_target)
+            return self._service.scaled_pixmap(
+                entry, self._service.filmstrip_target, THUMBNAIL_SIZE
+            )
         if role == SELECTED_ROLE:
             return entry.photo.id in self._selected
         if role == MISSING_ROLE:
@@ -117,16 +120,10 @@ class FilmstripDelegate(QStyledItemDelegate):
         if pixmap is None:
             painter.fillRect(rect, QColor(48, 48, 52))
         else:
-            scaled = pixmap.scaled(
-                rect.size() * pixmap.devicePixelRatio(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
             ratio = pixmap.devicePixelRatio()
-            scaled.setDevicePixelRatio(ratio)
-            target = QRect(0, 0, int(scaled.width() / ratio), int(scaled.height() / ratio))
+            target = QRect(0, 0, int(pixmap.width() / ratio), int(pixmap.height() / ratio))
             target.moveCenter(rect.center())
-            painter.drawPixmap(target, scaled)
+            painter.drawPixmap(target, pixmap)
             rect = target
 
         if index.data(MISSING_ROLE):
@@ -158,8 +155,7 @@ class Filmstrip(QListView):
         self.setViewMode(QListView.ViewMode.ListMode)
         self.setResizeMode(QListView.ResizeMode.Adjust)
         self.setUniformItemSizes(True)
-        self.setLayoutMode(QListView.LayoutMode.Batched)
-        self.setBatchSize(64)
+        self.setLayoutMode(QListView.LayoutMode.SinglePass)
         self.setHorizontalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSelectionMode(QListView.SelectionMode.SingleSelection)
@@ -174,9 +170,9 @@ class Filmstrip(QListView):
             return
         index = model.index(min(max(row, 0), model.rowCount() - 1), 0)
         if index == self.currentIndex():
+            self.scrollTo(index, QListView.ScrollHint.PositionAtCenter)
             return
         self.setCurrentIndex(index)
-        self.scrollTo(index, QListView.ScrollHint.PositionAtCenter)
 
     def _on_current_changed(
         self,
