@@ -72,6 +72,11 @@ never in there.
 The filmstrip and the large image share one cursor, and the strip keeps the
 current photo centred.
 
+**The clock on a thumbnail** means that photo carries no EXIF capture time, so
+its place in the timeline comes from the file's modification date and is a
+guess. Hover it for the details; the caption under the large image says
+*(estimated)* for the same reason.
+
 **Zoom.** The wheel zooms around the pointer, double click toggles, and dragging
 pans once you are past fit. Zooming past fit decodes the original at full
 resolution in the background, so it shows real detail rather than an enlarged
@@ -85,8 +90,10 @@ offsets…* and apply the computed delta. Re-sorting is in memory — no rescan.
 
 ## Language
 
-The interface follows the system language and falls back to English. Dutch ships
-with it. To force one:
+Switch under *View ▸ Language*; it applies immediately and is remembered. On
+first run the interface follows the system language and falls back to English.
+Dutch ships with it. `FOTOZEEF_LANG` overrides the saved choice, which is handy
+for testing:
 
 ```bash
 FOTOZEEF_LANG=nl uv run fotozeef

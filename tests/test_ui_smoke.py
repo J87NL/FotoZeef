@@ -12,6 +12,7 @@ from fotozeef.core.library import Library
 from fotozeef.core.models import ProjectSettings
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.main_window import MainWindow
+from fotozeef.ui.start_screen import COUNT_ROLE, NAME_ROLE
 
 
 @pytest.fixture
@@ -265,7 +266,7 @@ def test_the_start_screen_lists_projects_and_opens_one(
     window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
 
     assert window._start_screen._list.count() == 1
-    assert "Bruiloft" in window._start_screen._list.item(0).text()
+    assert window._start_screen._list.item(0).data(NAME_ROLE) == "Bruiloft"
 
     window._on_project_opened(library.open_project(project.id))
     assert window._pages.currentIndex() == 1
@@ -298,3 +299,65 @@ def test_forgetting_the_open_project_lands_on_the_start_screen(window: MainWindo
 
     assert window._pages.currentWidget() is window._start_screen
     assert window._start_screen._list.count() == 0
+
+
+def test_fullscreen_returns_a_maximised_window_to_maximised(window: MainWindow) -> None:
+    window.showMaximized()
+    assert window.isMaximized()
+
+    window.toggle_fullscreen()
+    _press(window, Qt.Key.Key_Escape)
+
+    assert not window.isFullScreen()
+    assert window.isMaximized(), "leaving fullscreen unmaximised the window"
+
+
+def test_fullscreen_returns_a_normal_window_to_normal(window: MainWindow) -> None:
+    window.showNormal()
+    assert not window.isMaximized()
+
+    window.toggle_fullscreen()
+    _press(window, Qt.Key.Key_F)
+
+    assert not window.isFullScreen()
+    assert not window.isMaximized()
+
+
+def test_the_start_screen_shows_how_many_photos_are_kept(
+    app: QApplication, tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    source = tmp_path / "cam"
+    for index in range(3):
+        jpeg_factory(source / f"{index}.jpg", captured_at=datetime(2024, 1, 1, 9, index, 0))
+    project = library.create_project("Shoot", [source], tmp_path / "out", ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    library.select(state, 2)
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    item = window._start_screen._list.item(0)
+
+    assert item.data(NAME_ROLE) == "Shoot"
+    assert item.data(COUNT_ROLE) == "2 in selection"
+    window.close()
+
+
+def test_a_project_without_a_selection_shows_no_count(
+    app: QApplication, tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    source = tmp_path / "cam"
+    jpeg_factory(source / "a.jpg")
+    library.create_project("Leeg", [source], tmp_path / "out", ProjectSettings())
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+
+    assert window._start_screen._list.item(0).data(COUNT_ROLE) == ""
+    window.close()
+
+
+def test_the_count_updates_after_culling(window: MainWindow) -> None:
+    _press(window, Qt.Key.Key_Space)
+    window._selection_queue.flush()
+    window.close_project()
+
+    assert window._start_screen._list.item(0).data(COUNT_ROLE) == "1 in selection"

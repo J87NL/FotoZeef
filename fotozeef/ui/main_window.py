@@ -4,7 +4,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QImage, QKeyEvent, QKeySequence, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCloseEvent,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -30,6 +38,7 @@ from fotozeef.ui.settings_dialog import SettingsDialog
 from fotozeef.ui.start_screen import StartScreen
 from fotozeef.ui.tasks import ProjectOpener, SelectionQueue
 from fotozeef.ui.thumbnail_service import ThumbnailService
+from fotozeef.ui.translations import available_languages, current_language, install, save_language
 from fotozeef.ui.viewer import Viewer
 
 PREFETCH_RADIUS = 3
@@ -47,6 +56,7 @@ class MainWindow(QMainWindow):
         self._reference: TimelineEntry | None = None
         self._progress: QProgressDialog | None = None
         self._fullscreen = False
+        self._was_maximized = False
 
         scale = self.screen().devicePixelRatio() if self.screen() is not None else 1.0
         self._service = ThumbnailService(cache, scale=scale, parent=self)
@@ -115,9 +125,14 @@ class MainWindow(QMainWindow):
         self._start_open(projects[0].id)
 
     def show_start_screen(self) -> None:
-        self._start_screen.set_projects(self._library.projects.list())
+        self._refresh_start_screen()
         self._pages.setCurrentWidget(self._start_screen)
         self._update_status()
+
+    def _refresh_start_screen(self) -> None:
+        self._start_screen.set_projects(
+            self._library.projects.list(), self._library.selections.counts_by_project()
+        )
 
     def close_project(self) -> None:
         if self._state is None:
@@ -166,7 +181,7 @@ class MainWindow(QMainWindow):
         if self._state is not None and self._state.project.id == project_id:
             self.close_project()
             return
-        self._start_screen.set_projects(self._library.projects.list())
+        self._refresh_start_screen()
 
     def edit_settings(self) -> None:
         if self._state is None:
@@ -232,6 +247,7 @@ class MainWindow(QMainWindow):
             self.leave_fullscreen()
             return
         self._fullscreen = True
+        self._was_maximized = self.isMaximized()
         self.menuBar().setVisible(False)
         self.statusBar().setVisible(False)
         self._filmstrip.setVisible(False)
@@ -240,13 +256,16 @@ class MainWindow(QMainWindow):
         self._hint_timer.start()
 
     def leave_fullscreen(self) -> None:
-        """Tracks its own flag: a window manager may not honour showFullScreen."""
+        """Restores the window state it came from; showNormal would unmaximise."""
         if not self._fullscreen:
             return
         self._fullscreen = False
         self._hint_timer.stop()
         self._viewer.show_hint(None)
-        self.showNormal()
+        if self._was_maximized:
+            self.showMaximized()
+        else:
+            self.showNormal()
         self.menuBar().setVisible(True)
         self.statusBar().setVisible(True)
         self._filmstrip.setVisible(True)
@@ -358,6 +377,39 @@ class MainWindow(QMainWindow):
         self._add(view_menu, self.tr("Zoom &out"), keys.ZoomOut, self.zoom_out)
         self._add(view_menu, self.tr("&Fit to window"), "0", self.zoom_to_fit)
         self._add(view_menu, self.tr("&Actual size"), "1", self.zoom_to_actual_size)
+        view_menu.addSeparator()
+        self._build_language_menu(view_menu.addMenu(self.tr("&Language")))
+
+    def _build_language_menu(self, menu: QMenu) -> None:
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        active = current_language()
+        for code, label in available_languages():
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(code == active)
+            action.triggered.connect(lambda _checked=False, code=code: self.set_language(code))
+            group.addAction(action)
+            menu.addAction(action)
+
+    def set_language(self, language: str) -> None:
+        if language == current_language():
+            return
+        application = QApplication.instance()
+        if application is None:
+            return
+        save_language(language)
+        install(application, language)
+        QTimer.singleShot(0, self.retranslate)
+
+    def retranslate(self) -> None:
+        """Menus and one-off labels hold their text, so they are rebuilt in place."""
+        self.menuBar().clear()
+        self._build_menu()
+        self._start_screen.retranslate()
+        self._refresh_start_screen()
+        self._render_current()
+        self._update_status()
 
     def _add(
         self,

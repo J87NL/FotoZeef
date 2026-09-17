@@ -279,7 +279,9 @@ class Viewer(QWidget):
     def _detail_text(self, entry: TimelineEntry) -> str:
         parts = [entry.source.label]
         moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
-        parts.append(f"{moment}~" if entry.is_estimated_time else moment)
+        if entry.is_estimated_time:
+            moment = self.tr("{0} (estimated)").format(moment)
+        parts.append(moment)
         if entry.photo.missing:
             parts.append(self.tr("missing"))
         return "   ".join(parts)

@@ -4,11 +4,17 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QTranslator
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication, QSettings, QTranslator
+from PySide6.QtWidgets import QApplication, QMenu
 
 from fotozeef.appinfo import I18N_DIR
-from fotozeef.ui.translations import install, preferred_language
+from fotozeef.ui.translations import (
+    SETTINGS_KEY,
+    available_languages,
+    install,
+    resolve_language,
+    save_language,
+)
 
 CATALOGUES = sorted(I18N_DIR.glob("*.ts"))
 
@@ -86,13 +92,66 @@ def test_dutch_catalogue_loads_and_translates(app: QApplication, monkeypatch) ->
 
 def test_language_comes_from_the_environment(monkeypatch) -> None:
     monkeypatch.setenv("FOTOZEEF_LANG", "nl_NL")
-    assert preferred_language() == "nl"
+    assert resolve_language() == "nl"
 
     monkeypatch.setenv("FOTOZEEF_LANG", "en")
-    assert preferred_language() == "en"
+    assert resolve_language() == "en"
 
 
 def test_an_unknown_language_falls_back_to_english(app: QApplication, monkeypatch) -> None:
     monkeypatch.setenv("FOTOZEEF_LANG", "xx")
 
     assert install(app) == "en"
+
+
+def test_switching_language_retranslates_the_window(
+    app: QApplication, tmp_path: Path, library, monkeypatch
+) -> None:
+    from fotozeef.core.thumbnails import ThumbnailCache
+    from fotozeef.ui.main_window import MainWindow
+
+    monkeypatch.delenv("FOTOZEEF_LANG", raising=False)
+    install(app, "en")
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    try:
+        assert window._status.text() == "No project open"
+        assert window._start_screen._new_button.text() == "New project…"
+
+        window.set_language("nl")
+        window.retranslate()
+
+        assert window._status.text() == "Geen project geopend"
+        assert window._start_screen._new_button.text() == "Nieuw project…"
+        assert [menu.title() for menu in window.menuBar().findChildren(QMenu)][:1] == ["&Project"]
+
+        window.set_language("en")
+        window.retranslate()
+        assert window._status.text() == "No project open"
+    finally:
+        window.close()
+        install(app, "en")
+
+
+def test_the_language_menu_lists_what_is_shipped(app: QApplication) -> None:
+    codes = [code for code, _label in available_languages()]
+
+    assert codes[0] == "en"
+    assert "nl" in codes
+    assert [label for code, label in available_languages() if code == "nl"] == ["Nederlands"]
+
+
+def test_a_saved_choice_beats_the_system_locale(app: QApplication, monkeypatch) -> None:
+    monkeypatch.delenv("FOTOZEEF_LANG", raising=False)
+    settings = QSettings()
+    previous = settings.value(SETTINGS_KEY)
+    try:
+        save_language("nl")
+        assert resolve_language() == "nl"
+
+        monkeypatch.setenv("FOTOZEEF_LANG", "en")
+        assert resolve_language() == "en", "the environment must still win"
+    finally:
+        if previous is None:
+            settings.remove(SETTINGS_KEY)
+        else:
+            settings.setValue(SETTINGS_KEY, previous)

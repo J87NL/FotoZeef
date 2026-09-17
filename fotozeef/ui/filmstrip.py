@@ -65,6 +65,19 @@ class FilmstripModel(QAbstractListModel):
         index = self.index(row, 0)
         self.dataChanged.emit(index, index)
 
+    def _tooltip_lines(self, entry: TimelineEntry) -> list[str]:
+        lines = [entry.photo.filename, entry.source.label]
+        moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
+        if entry.is_estimated_time:
+            lines.append(
+                self.tr("{0} — no capture time in EXIF, placed by file date").format(moment)
+            )
+        else:
+            lines.append(moment)
+        if entry.photo.missing:
+            lines.append(self.tr("Missing from its source folder"))
+        return lines
+
     def entry(self, row: int) -> TimelineEntry | None:
         if 0 <= row < len(self._entries):
             return self._entries[row]
@@ -94,7 +107,7 @@ class FilmstripModel(QAbstractListModel):
         if role == ESTIMATED_ROLE:
             return entry.is_estimated_time
         if role == int(Qt.ItemDataRole.ToolTipRole):
-            return f"{entry.photo.filename}\n{entry.source.label}"
+            return "\n".join(self._tooltip_lines(entry))
         return None
 
 

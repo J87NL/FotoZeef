@@ -370,6 +370,12 @@ class SelectionRepository:
         ).fetchall()
         return tuple(_selection_from_row(row) for row in rows)
 
+    def counts_by_project(self) -> dict[int, int]:
+        rows = self._db.connection.execute(
+            "SELECT project_id, COUNT(*) AS total FROM selections GROUP BY project_id"
+        ).fetchall()
+        return {int(row["project_id"]): int(row["total"]) for row in rows}
+
     def get(self, photo_id: int) -> Selection | None:
         row = self._db.connection.execute(
             "SELECT * FROM selections WHERE photo_id = ?", (photo_id,)

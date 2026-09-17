@@ -140,3 +140,26 @@ def test_metadata_is_not_reread_when_the_file_is_unchanged(
 
     assert calls and calls[0] is not None
     assert state.entries[0].photo.captured_at == datetime(2024, 1, 1, 9, 0, 0)
+
+
+def test_selection_counts_are_reported_per_project(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    for index in range(3):
+        jpeg_factory(first / f"{index}.jpg", captured_at=datetime(2024, 1, 1, 9, index, 0))
+    jpeg_factory(second / "x.jpg", captured_at=datetime(2024, 1, 1, 9, 0, 0))
+    one = library.create_project("one", [first], tmp_path / "out1", ProjectSettings())
+    two = library.create_project("two", [second], tmp_path / "out2", ProjectSettings())
+
+    state = library.open_project(one.id)
+    library.select(state, 0)
+    library.select(state, 2)
+    other = library.open_project(two.id)
+
+    counts = library.selections.counts_by_project()
+
+    assert counts.get(one.id) == 2
+    assert counts.get(two.id) is None
+    assert other.selections == {}
