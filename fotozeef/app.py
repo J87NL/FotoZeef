@@ -11,7 +11,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from fotozeef.appinfo import APP_NAME, APP_VERSION, ICON_PATH, cache_dir, database_path
+from fotozeef.appinfo import (
+    APP_AUTHOR,
+    APP_NAME,
+    APP_VERSION,
+    ICON_PATH,
+    cache_dir,
+    database_path,
+)
 from fotozeef.core.db import Database
 from fotozeef.core.library import Library
 from fotozeef.core.thumbnails import ThumbnailCache
@@ -25,12 +32,12 @@ def build_application(argv: list[str]) -> QApplication:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(argv)
-    install_translations(app)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setOrganizationName("ComfyCoders")
+    app.setOrganizationName(APP_AUTHOR)
     app.setDesktopFileName("fotozeef")
+    install_translations(app)
     if ICON_PATH.is_file():
         app.setWindowIcon(QIcon(str(ICON_PATH)))
     apply_dark_theme(app)

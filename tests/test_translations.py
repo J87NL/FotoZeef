@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -162,3 +164,45 @@ def test_tests_do_not_write_to_real_user_settings(app: QApplication, tmp_path_fa
 
     assert settings.format() == QSettings.Format.IniFormat
     assert "settings" in settings.fileName(), settings.fileName()
+
+
+STARTUP_PROBE = """
+import os, sys
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ.pop("FOTOZEEF_LANG", None)
+
+from PySide6.QtCore import QSettings
+
+# Point settings at a scratch directory, but do NOT name the application:
+# build_application() has to do that itself before it reads the saved choice.
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+for scope in (QSettings.Scope.UserScope, QSettings.Scope.SystemScope):
+    QSettings.setPath(QSettings.Format.IniFormat, scope, sys.argv[1])
+
+from fotozeef.appinfo import APP_AUTHOR, APP_NAME
+from fotozeef.ui.translations import SETTINGS_KEY
+
+stored = QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope, APP_AUTHOR, APP_NAME)
+stored.setValue(SETTINGS_KEY, "nl")
+stored.sync()
+
+from fotozeef.app import build_application
+from fotozeef.ui.translations import current_language
+
+build_application([APP_NAME])
+print(current_language())
+"""
+
+
+def test_a_saved_language_survives_a_restart(tmp_path: Path) -> None:
+    """Startup must name the application before it asks QSettings anything."""
+    result = subprocess.run(
+        [sys.executable, "-c", STARTUP_PROBE, str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == "nl", result.stdout + result.stderr
