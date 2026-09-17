@@ -36,13 +36,25 @@ def test_every_string_is_translated(catalogue: Path) -> None:
 
 
 @pytest.mark.parametrize("catalogue", CATALOGUES, ids=lambda path: path.stem)
-def test_the_compiled_catalogue_is_present_and_current(catalogue: Path) -> None:
+def test_the_compiled_catalogue_matches_its_source(catalogue: Path, app: QApplication) -> None:
+    """Compares content, not timestamps: git checkouts do not preserve mtimes."""
     compiled = catalogue.with_suffix(".qm")
-
     assert compiled.is_file(), f"{compiled.name} is missing; run pyside6-lrelease"
-    assert compiled.stat().st_mtime >= catalogue.stat().st_mtime, (
-        f"{compiled.name} is older than {catalogue.name}; run pyside6-lrelease"
-    )
+
+    translator = QTranslator()
+    assert translator.load(str(compiled)), f"{compiled.name} could not be loaded"
+
+    stale: list[str] = []
+    for context in ET.parse(catalogue).getroot().findall("context"):
+        name = context.findtext("name") or ""
+        for message in context.findall("message"):
+            source = message.findtext("source") or ""
+            expected = message.findtext("translation") or ""
+            actual = translator.translate(name, source)
+            if actual != expected:
+                stale.append(f"{name}: {source!r} gives {actual!r}, expected {expected!r}")
+
+    assert stale == [], f"{compiled.name} is out of date; run pyside6-lrelease: {stale}"
 
 
 @pytest.mark.parametrize("catalogue", CATALOGUES, ids=lambda path: path.stem)

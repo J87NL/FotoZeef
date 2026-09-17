@@ -24,6 +24,7 @@ CAPTION_HEIGHT = 34
 FIT = 1.0
 MAX_ZOOM = 16.0
 ZOOM_STEP = 1.25
+_CLAMP_PASSES = 3
 
 
 class Viewer(QWidget):
@@ -218,17 +219,27 @@ class Viewer(QWidget):
         return self.rect().adjusted(12, 12, -12, -(CAPTION_HEIGHT + 12))
 
     def _clamp_pan(self) -> None:
+        """Corrects against the drawn edges: centre-based limits round a pixel off."""
         if not self.zoomed or self._pixmap is None:
             self._pan = QPointF(0.0, 0.0)
             return
         canvas = self._canvas()
-        target = self._target_rect(canvas)
-        limit_x = max(0.0, (target.width() - canvas.width()) / 2)
-        limit_y = max(0.0, (target.height() - canvas.height()) / 2)
-        self._pan = QPointF(
-            min(max(self._pan.x(), -limit_x), limit_x),
-            min(max(self._pan.y(), -limit_y), limit_y),
-        )
+        for _ in range(_CLAMP_PASSES):
+            target = self._target_rect(canvas)
+            pan = QPointF(self._pan)
+            pan.setX(
+                _edge_correction(
+                    pan.x(), target.left(), target.right(), canvas.left(), canvas.right()
+                )
+            )
+            pan.setY(
+                _edge_correction(
+                    pan.y(), target.top(), target.bottom(), canvas.top(), canvas.bottom()
+                )
+            )
+            if pan == self._pan:
+                return
+            self._pan = pan
 
     def _draw_hint(self, painter: QPainter) -> None:
         if self._hint is None:
@@ -279,3 +290,19 @@ class Viewer(QWidget):
     def _draw_centered_text(self, painter: QPainter, rect: QRect, text: str, color: QColor) -> None:
         painter.setPen(color)
         painter.drawText(QRectF(rect), int(Qt.AlignmentFlag.AlignCenter), text)
+
+
+def _edge_correction(
+    pan: float,
+    low: float,
+    high: float,
+    canvas_low: float,
+    canvas_high: float,
+) -> float:
+    if high - low <= canvas_high - canvas_low:
+        return 0.0
+    if low > canvas_low:
+        return pan + (canvas_low - low)
+    if high < canvas_high:
+        return pan + (canvas_high - high)
+    return pan

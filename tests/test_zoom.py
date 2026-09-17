@@ -5,14 +5,15 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QKeyEvent, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from fotozeef.core.library import Library
 from fotozeef.core.models import ProjectSettings
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.main_window import MainWindow
+from fotozeef.ui.viewer import Viewer
 
 
 @pytest.fixture
@@ -90,16 +91,39 @@ def test_zoom_survives_stepping_to_the_next_photo(window: MainWindow) -> None:
     assert window._viewer.zoom == pytest.approx(zoomed)
 
 
-def test_panning_is_clamped_to_the_image(window: MainWindow) -> None:
-    _press(window, Qt.Key.Key_Plus)
-    viewer = window._viewer
-    viewer._pan.setX(100_000)
+@pytest.mark.parametrize("push", [(100_000, 100_000), (-100_000, -100_000)])
+def test_panning_never_opens_a_gap(app: QApplication, push: tuple[int, int]) -> None:
+    """Drives the viewer directly: through the window the preview loads async."""
+    viewer = Viewer()
+    viewer.resize(800, 600)
+    pixmap = QPixmap(1600, 1200)
+    pixmap.fill(QColor(90, 120, 160))
+    viewer._pixmap = pixmap
+    viewer.set_zoom(4.0)
+    canvas = viewer._canvas()
+    assert viewer._target_rect(canvas).width() > canvas.width()
+
+    viewer._pan = QPointF(*push)
     viewer._clamp_pan()
 
-    canvas = viewer._canvas()
     target = viewer._target_rect(canvas)
     assert target.left() <= canvas.left()
     assert target.right() >= canvas.right()
+    assert target.top() <= canvas.top()
+    assert target.bottom() >= canvas.bottom()
+
+
+def test_a_fitted_image_stays_centred(app: QApplication) -> None:
+    viewer = Viewer()
+    viewer.resize(800, 600)
+    pixmap = QPixmap(1600, 1200)
+    pixmap.fill(QColor(90, 120, 160))
+    viewer._pixmap = pixmap
+
+    viewer._pan = QPointF(500, 500)
+    viewer._clamp_pan()
+
+    assert viewer._pan == QPointF(0, 0)
 
 
 def test_zoom_shows_in_the_status_line(window: MainWindow) -> None:
