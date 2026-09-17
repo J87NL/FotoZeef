@@ -84,8 +84,10 @@ def test_the_about_box_names_its_author_and_drops_the_bundle_id(app: QApplicatio
 
 
 def test_the_author_stays_out_of_filesystem_paths() -> None:
-    from fotozeef.appinfo import APP_AUTHOR, cache_dir, data_dir
+    """Only the folder FotoZeef adds is ours; the base is the platform's."""
+    from fotozeef.appinfo import APP_AUTHOR, APP_NAME, cache_dir, data_dir
 
-    assert " " not in str(data_dir()), "a name with a space has no business in a path"
-    assert APP_AUTHOR not in str(data_dir())
-    assert APP_AUTHOR not in str(cache_dir())
+    for directory in (data_dir(), cache_dir()):
+        assert APP_AUTHOR not in str(directory)
+        assert directory.name == APP_NAME
+        assert " " not in directory.name
