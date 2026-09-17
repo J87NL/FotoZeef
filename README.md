@@ -42,9 +42,10 @@ sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libfontconfig1 \
 
 ### First run
 
-There is no project yet, so the window opens empty. *Project ▸ New project…*,
-add one or more folders, and leave the destination blank to get
-`<first folder>/selectie`. Then arrow keys to move, space to keep.
+The start screen offers *New project…* and *Open project…*, and lists the
+projects you opened before. Create one, add one or more folders, and leave the
+destination blank to get `<first folder>/selectie`. Then arrow keys to move,
+space to keep. *Project ▸ Close project* takes you back to the start screen.
 
 Its own files live in `~/.local/share/FotoZeef/` (the database) and
 `~/.cache/FotoZeef/` (thumbnails). Delete those to start over; your photos are
@@ -55,19 +56,58 @@ never in there.
 | Key | Action |
 |---|---|
 | `←` / `→` | Previous / next photo |
-| `Space` | Toggle selection |
+| `Space` | Keep / unkeep the current photo |
 | `Home` / `End` | First / last photo |
 | `PgUp` / `PgDn` | Jump 10 |
-| `F` | Toggle fullscreen |
+| `+` / `-` | Zoom in / out |
+| `0` | Fit to window |
+| `1` | Actual size |
+| `F` | Fullscreen |
+| `Esc` | Unzoom, then leave fullscreen |
 | `Ctrl/Cmd + N` | New project |
 | `Ctrl/Cmd + O` | Open project |
+| `Ctrl/Cmd + W` | Close project |
 | `Ctrl/Cmd + ,` | Project settings |
-| `Esc` | Leave fullscreen |
 
-Time offsets live under *Timeline*. To align two cameras: put the cursor on a
+The filmstrip and the large image share one cursor, and the strip keeps the
+current photo centred.
+
+**Zoom.** The wheel zooms around the pointer, double click toggles, and dragging
+pans once you are past fit. Zooming past fit decodes the original at full
+resolution in the background, so it shows real detail rather than an enlarged
+preview — that is the point of zooming while culling. The zoom level is kept as
+you step through photos, so you can check focus frame after frame.
+
+**Time offsets** live under *Timeline*. To align two cameras: put the cursor on a
 photo from the first camera, choose *Timeline ▸ Set time reference*, move to the
 photo of the same moment from the second camera, then open *Timeline ▸ Time
 offsets…* and apply the computed delta. Re-sorting is in memory — no rescan.
+
+## Language
+
+The interface follows the system language and falls back to English. Dutch ships
+with it. To force one:
+
+```bash
+FOTOZEEF_LANG=nl uv run fotozeef
+FOTOZEEF_LANG=en uv run fotozeef
+```
+
+To add or change a translation:
+
+```bash
+uv run pyside6-lupdate fotozeef/ui/*.py fotozeef/app.py \
+  -ts fotozeef/resources/i18n/fotozeef_nl.ts -no-obsolete
+uv run pyside6-linguist fotozeef/resources/i18n/fotozeef_nl.ts
+uv run pyside6-lrelease fotozeef/resources/i18n/fotozeef_nl.ts \
+  -qm fotozeef/resources/i18n/fotozeef_nl.qm
+```
+
+Both the `.ts` and the compiled `.qm` are committed, so a checkout runs without
+the Qt tools. `tests/test_translations.py` fails if a string is left
+untranslated, if a `{0}` placeholder is lost in translation, or if the `.qm` is
+older than its `.ts` — a new language is picked up by dropping its `.ts` in that
+folder.
 
 ## Layout
 

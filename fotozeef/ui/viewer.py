@@ -36,7 +36,7 @@ class Viewer(QWidget):
         self._selected = False
         self._message: str | None = None
         self._hint: str | None = None
-        self._placeholder = "Open or create a project to start culling"
+        self._placeholder = self.tr("Open or create a project to start culling")
         self._zoom = FIT
         self._pan = QPointF(0.0, 0.0)
         self._drag_from: QPoint | None = None
@@ -165,7 +165,7 @@ class Viewer(QWidget):
         if self._message is not None:
             self._draw_centered_text(painter, canvas, self._message, CAPTION_DIM)
         elif self._pixmap is None or self._pixmap.isNull():
-            self._draw_centered_text(painter, canvas, "Loading…", CAPTION_DIM)
+            self._draw_centered_text(painter, canvas, self.tr("Loading…"), CAPTION_DIM)
         else:
             target = self._draw_pixmap(painter, canvas)
             if self._selected:
@@ -270,7 +270,7 @@ class Viewer(QWidget):
         moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
         parts.append(f"{moment}~" if entry.is_estimated_time else moment)
         if entry.photo.missing:
-            parts.append("missing")
+            parts.append(self.tr("missing"))
         return "   ".join(parts)
 
     def _draw_placeholder(self, painter: QPainter) -> None:

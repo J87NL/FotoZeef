@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressDialog,
     QStackedWidget,
@@ -186,9 +187,11 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             APP_NAME,
-            "The selection is read back from the destination folder, so pointing the project"
-            " at a different folder starts from whatever is already in there.\n\n"
-            "Photos already copied stay where they are. Continue?",
+            self.tr(
+                "The selection is read back from the destination folder, so pointing the"
+                " project at a different folder starts from whatever is already in there.\n\n"
+                "Photos already copied stay where they are. Continue?"
+            ),
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
             QMessageBox.StandardButton.Cancel,
         )
@@ -220,7 +223,9 @@ class MainWindow(QMainWindow):
             return
         self._reference = self._state.current
         if self._reference is not None:
-            self.statusBar().showMessage(f"Time reference: {self._reference.photo.filename}", 4000)
+            self.statusBar().showMessage(
+                self.tr("Time reference: {0}").format(self._reference.photo.filename), 4000
+            )
 
     def toggle_fullscreen(self) -> None:
         if self._fullscreen:
@@ -253,7 +258,9 @@ class MainWindow(QMainWindow):
         index = state.cursor
         entry = state.entries[index]
         if entry.photo.missing:
-            self.statusBar().showMessage("That file is missing from its source folder", 4000)
+            self.statusBar().showMessage(
+                self.tr("That file is missing from its source folder"), 4000
+            )
             return
         photo_id = entry.photo.id
         wanted = photo_id not in self._selected
@@ -330,39 +337,31 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _build_menu(self) -> None:
-        project_menu = self.menuBar().addMenu("&Project")
-        project_menu.addAction(
-            self._action("&New project…", QKeySequence.StandardKey.New, self.new_project)
-        )
-        project_menu.addAction(
-            self._action("&Open project…", QKeySequence.StandardKey.Open, self.open_project)
-        )
-        project_menu.addAction(
-            self._action("&Close project", QKeySequence.StandardKey.Close, self.close_project)
-        )
+        keys = QKeySequence.StandardKey
+        project_menu = self.menuBar().addMenu(self.tr("&Project"))
+        self._add(project_menu, self.tr("&New project…"), keys.New, self.new_project)
+        self._add(project_menu, self.tr("&Open project…"), keys.Open, self.open_project)
+        self._add(project_menu, self.tr("&Close project"), keys.Close, self.close_project)
         project_menu.addSeparator()
-        project_menu.addAction(
-            self._action("&Settings…", QKeySequence.StandardKey.Preferences, self.edit_settings)
-        )
+        self._add(project_menu, self.tr("&Settings…"), keys.Preferences, self.edit_settings)
         project_menu.addSeparator()
-        project_menu.addAction(self._action("&Quit", QKeySequence.StandardKey.Quit, self.close))
+        self._add(project_menu, self.tr("&Quit"), keys.Quit, self.close)
 
-        timeline_menu = self.menuBar().addMenu("&Timeline")
-        timeline_menu.addAction(self._action("Set time &reference", None, self.set_time_reference))
-        timeline_menu.addAction(self._action("Time &offsets…", None, self.edit_offsets))
+        timeline_menu = self.menuBar().addMenu(self.tr("&Timeline"))
+        self._add(timeline_menu, self.tr("Set time &reference"), None, self.set_time_reference)
+        self._add(timeline_menu, self.tr("Time &offsets…"), None, self.edit_offsets)
 
-        view_menu = self.menuBar().addMenu("&View")
-        view_menu.addAction(self._action("&Fullscreen", "F", self.toggle_fullscreen))
+        view_menu = self.menuBar().addMenu(self.tr("&View"))
+        self._add(view_menu, self.tr("&Fullscreen"), "F", self.toggle_fullscreen)
         view_menu.addSeparator()
-        view_menu.addAction(self._action("Zoom &in", QKeySequence.StandardKey.ZoomIn, self.zoom_in))
-        view_menu.addAction(
-            self._action("Zoom &out", QKeySequence.StandardKey.ZoomOut, self.zoom_out)
-        )
-        view_menu.addAction(self._action("&Fit to window", "0", self.zoom_to_fit))
-        view_menu.addAction(self._action("&Actual size", "1", self.zoom_to_actual_size))
+        self._add(view_menu, self.tr("Zoom &in"), keys.ZoomIn, self.zoom_in)
+        self._add(view_menu, self.tr("Zoom &out"), keys.ZoomOut, self.zoom_out)
+        self._add(view_menu, self.tr("&Fit to window"), "0", self.zoom_to_fit)
+        self._add(view_menu, self.tr("&Actual size"), "1", self.zoom_to_actual_size)
 
-    def _action(
+    def _add(
         self,
+        menu: QMenu,
         text: str,
         shortcut: QKeySequence.StandardKey | str | None,
         handler: Callable[[], None],
@@ -371,6 +370,7 @@ class MainWindow(QMainWindow):
         if shortcut is not None:
             action.setShortcut(shortcut)
         action.triggered.connect(handler)
+        menu.addAction(action)
         return action
 
     def _start_open(self, project_id: int) -> None:
@@ -381,7 +381,7 @@ class MainWindow(QMainWindow):
         self._opener.start(project_id)
 
     def _show_progress(self) -> None:
-        progress = QProgressDialog("Scanning…", "Cancel", 0, 0, self)
+        progress = QProgressDialog(self.tr("Scanning…"), self.tr("Cancel"), 0, 0, self)
         progress.setWindowTitle(APP_NAME)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
@@ -390,7 +390,7 @@ class MainWindow(QMainWindow):
 
     def _on_scan_progress(self, label: str, count: int) -> None:
         if self._progress is not None:
-            self._progress.setLabelText(f"Scanning {label}: {count} photos")
+            self._progress.setLabelText(self.tr("Scanning {0}: {1} photos").format(label, count))
 
     def _on_project_opened(self, state: ProjectState) -> None:
         self._close_progress()
@@ -412,21 +412,25 @@ class MainWindow(QMainWindow):
 
     def _report_scan(self, state: ProjectState) -> None:
         if state.scan.cancelled:
-            self.statusBar().showMessage("Scan cancelled; showing what was found so far", 6000)
+            self.statusBar().showMessage(
+                self.tr("Scan cancelled; showing what was found so far"), 6000
+            )
             return
         notes: list[str] = []
         if state.scan.added:
-            notes.append(f"{state.scan.added} new")
+            notes.append(self.tr("{0} new").format(state.scan.added))
         if state.scan.missing:
-            notes.append(f"{state.scan.missing} missing")
+            notes.append(self.tr("{0} missing").format(state.scan.missing))
         if state.scan.skipped_videos:
-            notes.append(f"{state.scan.skipped_videos} video files skipped")
+            notes.append(self.tr("{0} video files skipped").format(state.scan.skipped_videos))
         if notes:
             self.statusBar().showMessage(", ".join(notes), 6000)
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()
-        QMessageBox.critical(self, APP_NAME, f"Could not open the project:\n{message}")
+        QMessageBox.critical(
+            self, APP_NAME, self.tr("Could not open the project:\n{0}").format(message)
+        )
 
     def _close_progress(self) -> None:
         if self._progress is None:
@@ -489,9 +493,9 @@ class MainWindow(QMainWindow):
         entry = state.current if state is not None else None
         if entry is None:
             self._viewer.set_placeholder(
-                "This project has no photos yet"
+                self.tr("This project has no photos yet")
                 if state is not None
-                else "Open or create a project to start culling"
+                else self.tr("Open or create a project to start culling")
             )
             self._viewer.show_entry(None, None, False)
             return
@@ -513,8 +517,8 @@ class MainWindow(QMainWindow):
 
     def _unreadable_text(self, entry: TimelineEntry) -> str:
         if entry.photo.missing:
-            return "This file is missing from its source folder"
-        return "This file could not be read"
+            return self.tr("This file is missing from its source folder")
+        return self.tr("This file could not be read")
 
     def _prefetch(self) -> None:
         state = self._state
@@ -555,7 +559,9 @@ class MainWindow(QMainWindow):
         if not intended:
             self.statusBar().showMessage(message, 6000)
             return
-        QMessageBox.warning(self, APP_NAME, f"Could not copy the photo:\n{message}")
+        QMessageBox.warning(
+            self, APP_NAME, self.tr("Could not copy the photo:\n{0}").format(message)
+        )
 
     def _rebuild_timeline(self) -> None:
         state = self._state
@@ -580,14 +586,16 @@ class MainWindow(QMainWindow):
     def _update_status(self) -> None:
         state = self._state
         if state is None or not state.entries:
-            self._status.setText("No project open")
+            self._status.setText(self.tr("No project open"))
             return
         position = state.cursor + 1
         total = len(state.entries)
         destination = _short_path(state.project.destination)
         zoom = f"    {self._viewer.zoom * 100:.0f}%" if self._viewer.zoomed else ""
         self._status.setText(
-            f"{position}/{total}    {len(self._selected)} selected{zoom}    → {destination}"
+            self.tr("{0}/{1}    {2} selected{3}    → {4}").format(
+                position, total, len(self._selected), zoom, destination
+            )
         )
 
 

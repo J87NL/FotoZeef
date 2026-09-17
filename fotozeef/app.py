@@ -17,6 +17,7 @@ from fotozeef.core.library import Library
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.main_window import MainWindow
 from fotozeef.ui.theme import apply_dark_theme
+from fotozeef.ui.translations import install as install_translations
 
 
 def build_application(argv: list[str]) -> QApplication:
@@ -24,6 +25,7 @@ def build_application(argv: list[str]) -> QApplication:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(argv)
+    install_translations(app)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)

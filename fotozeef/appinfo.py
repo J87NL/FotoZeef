@@ -13,6 +13,7 @@ DATABASE_FILENAME = "fotozeef.sqlite"
 
 RESOURCES_DIR = Path(__file__).resolve().parent / "resources"
 ICON_PATH = RESOURCES_DIR / "icon.png"
+I18N_DIR = RESOURCES_DIR / "i18n"
 
 
 def data_dir() -> Path:

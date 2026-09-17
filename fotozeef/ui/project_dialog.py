@@ -33,26 +33,26 @@ class ProjectRequest:
 class ProjectDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("New project")
+        self.setWindowTitle(self.tr("New project"))
         self.setMinimumWidth(560)
 
         self._name = QLineEdit(self)
-        self._name.setPlaceholderText("Shoot name")
+        self._name.setPlaceholderText(self.tr("Shoot name"))
         self._sources = QListWidget(self)
         self._sources.setMinimumHeight(120)
         self._destination = QLineEdit(self)
         self._destination.setPlaceholderText(f"<first source>/{DEFAULT_DESTINATION_NAME}")
-        self._recursive = QCheckBox("Scan subfolders", self)
+        self._recursive = QCheckBox(self.tr("Scan subfolders"), self)
         self._recursive.setChecked(True)
-        self._copy_raw = QCheckBox("Copy the RAW file alongside its JPEG", self)
+        self._copy_raw = QCheckBox(self.tr("Copy the RAW file alongside its JPEG"), self)
         self._copy_raw.setChecked(True)
-        self._write_xmp = QCheckBox("Write XMP sidecars next to the originals", self)
+        self._write_xmp = QCheckBox(self.tr("Write XMP sidecars next to the originals"), self)
 
-        add_source = QPushButton("Add folder…", self)
+        add_source = QPushButton(self.tr("Add folder…"), self)
         add_source.clicked.connect(self._add_source)
-        remove_source = QPushButton("Remove", self)
+        remove_source = QPushButton(self.tr("Remove"), self)
         remove_source.clicked.connect(self._remove_source)
-        pick_destination = QPushButton("Choose…", self)
+        pick_destination = QPushButton(self.tr("Choose…"), self)
         pick_destination.clicked.connect(self._pick_destination)
 
         source_buttons = QHBoxLayout()
@@ -65,10 +65,10 @@ class ProjectDialog(QDialog):
         destination_row.addWidget(pick_destination)
 
         form = QFormLayout()
-        form.addRow("Name", self._name)
-        form.addRow("Sources", self._sources)
+        form.addRow(self.tr("Name"), self._name)
+        form.addRow(self.tr("Sources"), self._sources)
         form.addRow("", source_buttons)
-        form.addRow("Destination", destination_row)
+        form.addRow(self.tr("Destination"), destination_row)
         form.addRow("", self._recursive)
         form.addRow("", self._copy_raw)
         form.addRow("", self._write_xmp)
@@ -83,7 +83,7 @@ class ProjectDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(QLabel("Originals are never moved or modified.", self))
+        layout.addWidget(QLabel(self.tr("Originals are never moved or modified."), self))
         layout.addWidget(self._buttons)
 
     @property
@@ -95,7 +95,7 @@ class ProjectDialog(QDialog):
             Path(self._sources.item(row).text()) for row in range(self._sources.count())
         )
         destination_text = self._destination.text().strip()
-        name = self._name.text().strip() or (sources[0].name if sources else "Untitled")
+        name = self._name.text().strip() or (sources[0].name if sources else self.tr("Untitled"))
         return ProjectRequest(
             name=name,
             sources=sources,
@@ -108,7 +108,7 @@ class ProjectDialog(QDialog):
         )
 
     def _add_source(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Add source folder")
+        chosen = QFileDialog.getExistingDirectory(self, self.tr("Add source folder"))
         if not chosen:
             return
         existing = {self._sources.item(row).text() for row in range(self._sources.count())}
@@ -125,6 +125,6 @@ class ProjectDialog(QDialog):
         self._ok_button.setEnabled(self._sources.count() > 0)
 
     def _pick_destination(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose destination folder")
+        chosen = QFileDialog.getExistingDirectory(self, self.tr("Choose destination folder"))
         if chosen:
             self._destination.setText(chosen)

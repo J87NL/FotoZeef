@@ -36,7 +36,7 @@ class OffsetDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Time offsets")
+        self.setWindowTitle(self.tr("Time offsets"))
         self.setMinimumWidth(560)
         self._sources = tuple(sources)
         self._spins: dict[int, QSpinBox] = {}
@@ -53,7 +53,7 @@ class OffsetDialog(QDialog):
             form.addRow(source.label, spin)
 
         layout = QVBoxLayout(self)
-        box = QGroupBox("Offset per source", self)
+        box = QGroupBox(self.tr("Offset per source"), self)
         box.setLayout(form)
         layout.addWidget(box)
 
@@ -87,14 +87,16 @@ class OffsetDialog(QDialog):
         reference_pixmap: QPixmap | None,
         target_pixmap: QPixmap | None,
     ) -> QWidget | None:
-        box = QGroupBox("Calibrate on one moment", self)
+        box = QGroupBox(self.tr("Calibrate on one moment"), self)
         layout = QVBoxLayout(box)
 
         if reference is None or target is None:
             layout.addWidget(
                 QLabel(
-                    "Mark a reference photo (Timeline ▸ Set time reference), then move to the"
-                    " matching photo from the other camera and reopen this dialog.",
+                    self.tr(
+                        "Mark a reference photo (Timeline ▸ Set time reference), then move to"
+                        " the matching photo from the other camera and reopen this dialog."
+                    ),
                     box,
                 )
             )
@@ -102,17 +104,17 @@ class OffsetDialog(QDialog):
 
         if reference.source.id == target.source.id:
             layout.addWidget(
-                QLabel("The reference photo and the current photo share one source.", box)
+                QLabel(self.tr("The reference photo and the current photo share one source."), box)
             )
             return box
 
         delta = calibration_offset(reference, target)
         photos = QHBoxLayout()
-        photos.addWidget(self._photo_card(box, "Reference", reference, reference_pixmap))
-        photos.addWidget(self._photo_card(box, "Current", target, target_pixmap))
+        photos.addWidget(self._photo_card(box, self.tr("Reference"), reference, reference_pixmap))
+        photos.addWidget(self._photo_card(box, self.tr("Current"), target, target_pixmap))
         layout.addLayout(photos)
 
-        apply = QPushButton(f"Set {target.source.label} to {delta:+d} s", box)
+        apply = QPushButton(self.tr("Set {0} to {1:+d} s").format(target.source.label, delta), box)
         apply.clicked.connect(lambda: self._spins[target.source.id].setValue(delta))
         layout.addWidget(apply)
         return box
@@ -144,7 +146,7 @@ class OffsetDialog(QDialog):
         raw = entry.photo.captured_at
         layout.addWidget(QLabel(entry.photo.filename, card))
         layout.addWidget(
-            QLabel(raw.strftime("%Y-%m-%d %H:%M:%S") if raw else "no capture time", card)
+            QLabel(raw.strftime("%Y-%m-%d %H:%M:%S") if raw else self.tr("no capture time"), card)
         )
         layout.addStretch(1)
         return card

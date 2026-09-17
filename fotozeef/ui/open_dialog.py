@@ -22,7 +22,7 @@ class OpenProjectDialog(QDialog):
 
     def __init__(self, projects: Sequence[Project], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Open project")
+        self.setWindowTitle(self.tr("Open project"))
         self.setMinimumWidth(520)
         self._projects = tuple(projects)
 
@@ -39,13 +39,13 @@ class OpenProjectDialog(QDialog):
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        self._delete = QPushButton("Forget project", self)
+        self._delete = QPushButton(self.tr("Forget project"), self)
         self._delete.clicked.connect(self._forget)
         buttons.addButton(self._delete, QDialogButtonBox.ButtonRole.DestructiveRole)
 
         layout = QVBoxLayout(self)
         if not self._projects:
-            layout.addWidget(QLabel("No projects yet.", self))
+            layout.addWidget(QLabel(self.tr("No projects yet."), self))
         layout.addWidget(self._list)
         layout.addWidget(buttons)
 
