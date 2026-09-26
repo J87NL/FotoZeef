@@ -69,7 +69,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
 
       - name: Compress the bundle
-        run: ditto -c -k --keepParent dist/FotoZeef.app dist/FotoZeef-macos.zip
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+          ditto -c -k --keepParent dist/FotoZeef.app "dist/FotoZeef-$version-macos.zip"
 
       - name: Report size
         run: |
@@ -77,12 +79,12 @@ jobs:
           echo "| what | size |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| .app bundle | $(du -sh dist/FotoZeef.app | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| zip (download) | $(du -h dist/FotoZeef-macos.zip | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| zip (download) | $(du -h dist/FotoZeef-*-macos.zip | cut -f1) |" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
           name: fotozeef-macos
-          path: dist/FotoZeef-macos.zip
+          path: dist/FotoZeef-*-macos.zip
 
   windows:
     name: Windows installer
