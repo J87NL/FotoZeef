@@ -29,5 +29,8 @@ if [ ! -x "$DIST/appimagetool" ]; then
   chmod +x "$DIST/appimagetool"
 fi
 
-ARCH="$(uname -m)" "$DIST/appimagetool" --appimage-extract-and-run "$APPDIR" "$DIST/FotoZeef-$(uname -m).AppImage"
-echo "built $DIST/FotoZeef-$(uname -m).AppImage"
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+APPIMAGE="$DIST/FotoZeef-$VERSION-$(uname -m).AppImage"
+
+ARCH="$(uname -m)" "$DIST/appimagetool" --appimage-extract-and-run "$APPDIR" "$APPIMAGE"
+echo "built $APPIMAGE"
