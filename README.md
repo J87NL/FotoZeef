@@ -15,9 +15,16 @@ Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases)
   it; nothing to install. Needs only the graphics stack (`libegl1`, `libgl1`),
   which every desktop already has.
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
-- **macOS** — no release build yet, since I have no Mac to build and test it on.
-  Run it [from source](DEVELOPMENT.md#run-from-source) for now. If you build and
-  test a macOS version, I'd love to hear from you.
+- **macOS** — `FotoZeef-<version>-macos.zip`, for Macs with Apple silicon (M1
+  and later). Unzip it and move `FotoZeef.app` to *Applications*. The app is not
+  signed by Apple, so the first time macOS refuses to open it: right-click it ▸
+  *Open* ▸ *Open*, or allow it under *System Settings ▸ Privacy & Security*.
+  After that it opens normally. It is built and started automatically on a Mac
+  for every release, but has had less hands-on testing than the other two; if
+  something is off, please open an issue.
+
+Windows may warn about an unknown publisher the first time, for the same
+reason: choose *More info ▸ Run anyway*.
 
 ## First run
 

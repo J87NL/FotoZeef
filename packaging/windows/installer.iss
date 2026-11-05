@@ -1,5 +1,5 @@
 #define AppName "FotoZeef"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define AppPublisher "Johan Montenij"
 #define AppExe "FotoZeef.exe"
 

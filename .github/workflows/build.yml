@@ -5,9 +5,34 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# A pushed v* tag builds all three and publishes them as a GitHub Release.
+# Run by hand (Actions > Build > Run workflow) it only builds, for testing a
+# branch; the downloads are then under the run's artifacts.
+permissions:
+  contents: read
+
 jobs:
+  version:
+    name: Version check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version and compare it with the tag
+        id: read
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in pyproject.toml"
+            exit 1
+          fi
+
   linux:
     name: AppImage
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +77,7 @@ jobs:
 
   macos:
     name: macOS app bundle
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +114,7 @@ jobs:
 
   windows:
     name: Windows installer
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -131,3 +158,41 @@ jobs:
           path: |
             packaging/windows/Output/*.exe
             dist/FotoZeef
+
+  release:
+    name: Publish the release
+    needs: [version, linux, macos, windows]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create the release with the three downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          files=(
+            artifacts/fotozeef-linux-appimage/FotoZeef-"$VERSION"-*.AppImage
+            artifacts/fotozeef-macos/FotoZeef-"$VERSION"-macos.zip
+            artifacts/fotozeef-windows/packaging/windows/Output/FotoZeef-"$VERSION"-setup.exe
+          )
+          for file in "${files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error::Missing download: $file"
+              ls -R artifacts
+              exit 1
+            fi
+          done
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "FotoZeef $VERSION" \
+              --generate-notes
+          fi

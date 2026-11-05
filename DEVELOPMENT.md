@@ -93,10 +93,11 @@ folder.
 ## Packaging
 
 PyInstaller does not cross-compile: each build must be made on its own
-operating system. CI does all three on a `v*` tag; locally you build the one
-you are sitting in front of. The version in the file names comes from
-`pyproject.toml`; the Windows installer still carries its own copy in
-`packaging/windows/installer.iss`.
+operating system. GitHub Actions does all three (see [Releasing](#releasing));
+locally you build the one you are sitting in front of. The version lives in
+three places — `pyproject.toml`, `fotozeef/appinfo.py` and
+`packaging/windows/installer.iss` — and `tests/test_version.py` fails when they
+disagree.
 
 ### Linux — AppImage
 
@@ -141,19 +142,33 @@ bash packaging/macos/build_app.sh
 
 Unsigned, so the first launch needs right-click ▸ Open. Set
 `MACOS_SIGN_IDENTITY` and `MACOS_NOTARY_PROFILE` to sign and notarise; those
-paths are wired but untested, since there is no certificate yet.
+paths are wired but untested, since there is no certificate yet. The release
+build comes from GitHub's `macos-latest` runner, which is Apple silicon, so the
+download is for M1 and later.
 
-**Help wanted.** I have no Mac, so releases ship without a macOS build. CI does
-produce a zip, but nobody has run it on real hardware. If you build it, try it
-on your photos and share the result, it can go into the next release.
+## Releasing
 
-### Via CI
+GitHub Actions builds the releases; no Mac or Windows machine is needed. For a
+public repository the hosted runners cost nothing, macOS included.
 
-Pushing a tag builds all three and uploads them as workflow artifacts:
+1. Raise the version in `pyproject.toml`, `fotozeef/appinfo.py` and
+   `packaging/windows/installer.iss`, run `uv lock`, and merge that to `main`.
+2. Tag the merge on `main` and push the tag:
 
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+   ```bash
+   git checkout main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The *Build* workflow then checks that the tag matches the version, builds and
+boots the AppImage, the macOS app and the Windows installer, and publishes them
+as a GitHub Release with notes generated from the merged pull requests. If the
+tag does not match `pyproject.toml`, it stops before building anything.
+
+To try a branch without releasing, run the workflow by hand: *Actions ▸ Build ▸
+Run workflow*, pick the branch. The three builds then appear under that run's
+*Artifacts*, and nothing is published.
 
 [uv]: https://docs.astral.sh/uv/
 [Inno Setup]: https://jrsoftware.org/isinfo.php
