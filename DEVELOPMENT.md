@@ -28,7 +28,15 @@ uv run fotozeef --selftest   # boots the whole stack offscreen
 ```
 
 `--selftest` is what CI runs against each packaged build: it reports whether
-HEIF and RAW decoding are live in that bundle and opens a window offscreen.
+HEIF and RAW decoding are live in that bundle, which way that platform keeps the
+screen awake during a slideshow (`sleepguard=`), and opens a window offscreen.
+
+Keeping the screen awake is platform code in `fotozeef/ui/sleep_guard.py`:
+`SetThreadExecutionState` on Windows, `caffeinate -w <pid>` on macOS, and the
+freedesktop `org.freedesktop.ScreenSaver.Inhibit` call on Linux, on a D-Bus
+connection of its own that is closed to end it. The test suite replaces all
+three with fakes; `tests/test_sleep_guard.py` also runs the Linux path against a
+fake screensaver on a private bus when `dbus-run-session` is installed.
 
 ## Layout
 

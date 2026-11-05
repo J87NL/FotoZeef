@@ -30,7 +30,9 @@ analysis = Analysis(
     pathex=[str(ROOT)],
     binaries=binaries,
     datas=[(str(ROOT / "fotozeef" / "resources"), "fotozeef/resources")],
-    hiddenimports=["pillow_heif", "rawpy", "exifread"],
+    # QtDBus keeps the screensaver away during a slideshow on Linux; it is
+    # imported lazily, so it is named here.
+    hiddenimports=["pillow_heif", "rawpy", "exifread", "PySide6.QtDBus"],
     hookspath=[],
     runtime_hooks=[],
     excludes=excludes,

@@ -83,6 +83,17 @@ def selftest() -> int:
         checks.append(f"thumbnail={len(payload)}B")
         checks.append(f"capture={read_metadata(sample, stat.st_mtime).capture_source}")
 
+        from fotozeef.ui.sleep_guard import DBusBackend, default_backend
+
+        backend = default_backend()
+        if isinstance(backend, DBusBackend):
+            try:
+                import PySide6.QtDBus  # noqa: F401
+            except ImportError as error:
+                print(f"selftest failed: QtDBus missing: {error}", file=sys.stderr)
+                return 1
+        checks.append(f"sleepguard={type(backend).__name__ if backend else 'none'}")
+
         library = Library(Database(root / "selftest.sqlite"))
         window = MainWindow(library, ThumbnailCache(root / "cache"))
         window.show()

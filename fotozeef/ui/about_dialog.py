@@ -111,6 +111,7 @@ class AboutDialog(QDialog):
             ("F", self.tr("Fullscreen")),
             ("Esc", self.tr("Unzoom, then leave fullscreen")),
             ("F5", self.tr("Slideshow: Space pauses, arrows step, Esc stops")),
+            ("B / .", self.tr("Slideshow: black screen and back")),
             ("Ctrl+N / Ctrl+O / Ctrl+W", self.tr("New / open / close project")),
             ("Ctrl+,", self.tr("Project settings")),
         ]

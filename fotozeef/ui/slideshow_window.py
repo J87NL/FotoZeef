@@ -38,6 +38,7 @@ from fotozeef.core.slideshow import (
     choose_transition,
 )
 from fotozeef.core.thumbnails import render_slide
+from fotozeef.ui.sleep_guard import SleepGuard
 
 TRANSITION_MS = 800
 VEIL_MS = 400
@@ -96,6 +97,8 @@ class SlideLoader(QObject):
                         self.failed.emit(key, str(error))
                 continue
             if self._is_closed():
+                with self._lock:
+                    self._decoding = None
                 continue
             photo = QImage(
                 slide.photo, slide.width, slide.height, slide.width * 3, QImage.Format.Format_RGB888
@@ -128,8 +131,10 @@ class SlideshowWindow(QWidget):
         settings: SlideshowSettings,
         screen: QScreen | None = None,
         rng: random.Random | None = None,
+        sleep_guard: SleepGuard | None = None,
     ) -> None:
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        self._sleep_guard = sleep_guard if sleep_guard is not None else SleepGuard()
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.setCursor(Qt.CursorShape.BlankCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -160,8 +165,10 @@ class SlideshowWindow(QWidget):
             width, height = round(size.width() * ratio), round(size.height() * ratio)
         else:
             width, height = 1920, 1080
-        # No Qt parent: the decode thread may outlive this window by one photo.
-        self._loader = SlideLoader(max(1, width), max(1, height))
+        # Parented, so Qt deletes it on this thread. The decode thread may outlive
+        # the window by one photo; it then only touches plain Python state and,
+        # being closed, never emits.
+        self._loader = SlideLoader(max(1, width), max(1, height), self)
         self._loader.loaded.connect(self._on_loaded)
         self._loader.failed.connect(self._on_failed)
 
@@ -198,6 +205,7 @@ class SlideshowWindow(QWidget):
         return self._paused and self._veil_target() > 0
 
     def start(self) -> None:
+        self._sleep_guard.acquire()
         self.showFullScreen()
         self.raise_()
         self.activateWindow()
@@ -213,7 +221,16 @@ class SlideshowWindow(QWidget):
         if self._paused:
             self._resume()
         else:
-            self._pause()
+            self._pause(black=self._settings.pause_mode is PauseMode.BLACK)
+
+    def toggle_black(self) -> None:
+        """The black-screen key of a presenter remote, whatever pausing is set to."""
+        if self._paused and self._veil_target() > 0:
+            self._resume()
+        elif self._paused:
+            self._fade_veil(1.0)
+        else:
+            self._pause(black=True)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
@@ -221,6 +238,8 @@ class SlideshowWindow(QWidget):
             self.close()
         elif key == Qt.Key.Key_Space:
             self.toggle_pause()
+        elif key in (Qt.Key.Key_B, Qt.Key.Key_Period):
+            self.toggle_black()
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown):
             self._step(self.next)
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp):
@@ -235,6 +254,7 @@ class SlideshowWindow(QWidget):
         self._animation.stop()
         self._veil_animation.stop()
         self._loader.shutdown()
+        self._sleep_guard.release()
         super().closeEvent(event)
         self.closed.emit()
 
@@ -261,8 +281,7 @@ class SlideshowWindow(QWidget):
         move()
 
     def _go(self, index: int, direction: int) -> None:
-        self._direction = direction
-        readable = self._first_readable(index, direction)
+        readable, self._direction = self._first_readable(index, direction)
         self._pending = readable
         if readable is None:
             self._dwell.stop()
@@ -272,20 +291,22 @@ class SlideshowWindow(QWidget):
         else:
             self._request_slides()
 
-    def _first_readable(self, index: int, direction: int) -> int | None:
-        """Steps past photos that failed to decode; None once none of them can be read.
+    def _first_readable(self, index: int, direction: int) -> tuple[int | None, int]:
+        """Steps past photos that failed to decode, and says which way it ended up going.
 
-        `index` must be the sequencer's current photo. Failures are forgotten at each
-        new round once something played, so a brief hiccup on a share costs one round.
+        `index` must be the sequencer's current photo. Going back past the very first
+        photo turns around. The bound covers a walk all the way back and forward
+        again; only "every photo failed" stops the show. Failures are forgotten at
+        each new round once something played, so a brief hiccup costs one round.
         """
-        for _ in range(len(self._entries) + 1):
+        for _ in range(2 * len(self._entries) + 2):
             if self._shown is not None and self._sequencer.round > self._unreadable_round:
                 self._unreadable.clear()
                 self._unreadable_round = self._sequencer.round
             if index not in self._unreadable:
-                return index
+                return index, direction
             if len(self._unreadable) >= len(self._entries):
-                return None
+                return None, direction
             if direction < 0:
                 earlier = self._sequencer.previous()
                 if earlier != index:
@@ -293,7 +314,7 @@ class SlideshowWindow(QWidget):
                     continue
                 direction = 1
             index = self._sequencer.next()
-        return None
+        return None, direction
 
     def _show(self, index: int) -> None:
         self._pending = None
@@ -349,12 +370,12 @@ class SlideshowWindow(QWidget):
         if index == self._pending:
             self._go(index, self._direction)
 
-    def _pause(self) -> None:
+    def _pause(self, black: bool) -> None:
         self._paused = True
         if self._dwell.isActive():
             self._remaining_ms = self._dwell.remainingTime()
         self._dwell.stop()
-        if self._settings.pause_mode is PauseMode.BLACK:
+        if black:
             self._fade_veil(1.0)
 
     def _resume(self) -> None:

@@ -164,7 +164,8 @@ class SlideshowPreparer(QObject):
                 should_cancel=self._cancel.is_set,
             )
         except Exception as error:
-            self.failed.emit(str(error))
+            if not self._cancel.is_set():
+                self.failed.emit(str(error))
             return
         if self._cancel.is_set():
             return

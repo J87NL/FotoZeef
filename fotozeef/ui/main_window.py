@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self._opener.progress.connect(self._on_scan_progress)
 
         self._slideshow: SlideshowWindow | None = None
+        self._actions: list[QAction] = []
         self._preparer = SlideshowPreparer(self)
         self._preparer.prepared.connect(self._on_slideshow_prepared)
         self._preparer.failed.connect(self._on_slideshow_failed)
@@ -336,9 +337,12 @@ class MainWindow(QMainWindow):
         show = SlideshowWindow(entries, settings, self.screen())
         show.closed.connect(self._on_slideshow_closed)
         self._slideshow = show
+        self._update_actions()
         show.start()
 
     def _on_slideshow_failed(self, message: str) -> None:
+        if self._preparer.cancelled:
+            return
         self._close_progress()
         QMessageBox.critical(
             self, APP_NAME, self.tr("Could not start the slideshow:\n{0}").format(message)
@@ -347,6 +351,7 @@ class MainWindow(QMainWindow):
     def _on_slideshow_closed(self) -> None:
         show = self._slideshow
         self._slideshow = None
+        self._update_actions()
         if show is not None:
             show.deleteLater()
         self.activateWindow()
@@ -445,6 +450,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _build_menu(self) -> None:
+        self._actions = []
         keys = QKeySequence.StandardKey
         project_menu = self.menuBar().addMenu(self.tr("&Project"))
         self._add(project_menu, self.tr("&New project…"), keys.New, self.new_project)
@@ -518,8 +524,15 @@ class MainWindow(QMainWindow):
         if shortcut is not None:
             action.setShortcut(shortcut)
         action.triggered.connect(handler)
+        action.setEnabled(self._slideshow is None)
         menu.addAction(action)
+        self._actions.append(action)
         return action
+
+    def _update_actions(self) -> None:
+        """Menu shortcuts stay off during a show: F or Ctrl+O must not act behind it."""
+        for action in self._actions:
+            action.setEnabled(self._slideshow is None)
 
     def _start_open(self, project_id: int) -> None:
         if self._opener.busy:

@@ -65,15 +65,23 @@ The settings are stored with the project, also when you only close the window,
 so a show can be set up in advance. The selection folder is never played, so
 copies of your favourites do not show up twice.
 
+While a show runs, the screen does not go to sleep and the screensaver stays
+away — on Windows, on macOS (via `caffeinate`) and on Linux desktops that offer
+the freedesktop screensaver interface (GNOME, KDE, Xfce and most others). Where
+that is not available the show plays on regardless.
+
 | Key | During the show |
 |---|---|
 | `Space` | Pause / resume |
+| `B` / `.` | Black screen / back to the show |
 | `→` / `PgDn` | Next photo |
 | `←` / `PgUp` | Previous photo |
 | `Esc` | Stop |
 
-`PgUp` and `PgDn` are what most presentation remotes send. Stepping while the
-screen is black brings the photo back; the show stays paused until `Space`.
+`PgUp`, `PgDn` and `B` (or `.`) are what most presentation remotes send, so a
+remote's black-screen button works whatever *When paused* is set to. Stepping
+while the screen is black brings the photo back; the show stays paused until
+`Space`.
 
 ## Good to know
 

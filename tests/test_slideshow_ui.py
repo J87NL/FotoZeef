@@ -485,3 +485,155 @@ def test_keys_reaching_the_main_window_during_a_show_do_not_select(
     show.close()
     _pump(app, lambda: window._slideshow is None)
     window.close()
+
+
+# --- presenter black key, screen sleep, second review ------------------------------
+
+
+@pytest.mark.parametrize("key", [Qt.Key.Key_B, Qt.Key.Key_Period])
+def test_the_black_key_blacks_out_even_when_pausing_holds(
+    app: QApplication, state, key: Qt.Key
+) -> None:
+    show = _show(app, state, pause_mode=PauseMode.HOLD)
+
+    _press(show, key)
+    assert show.paused
+    assert show.blacked_out
+
+    _press(show, key)
+    assert not show.paused
+    assert not show.blacked_out
+    assert show._dwell.isActive()
+    show.close()
+
+
+def test_the_black_key_during_a_held_pause_stays_paused(app: QApplication, state) -> None:
+    show = _show(app, state, pause_mode=PauseMode.HOLD)
+    _press(show, Qt.Key.Key_Space)
+
+    _press(show, Qt.Key.Key_B)
+
+    assert show.paused
+    assert show.blacked_out
+    assert not show._dwell.isActive()
+    show.close()
+
+
+class RecordingGuard:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def acquire(self) -> None:
+        self.calls.append("acquire")
+
+    def release(self) -> None:
+        self.calls.append("release")
+
+
+def test_the_screen_is_kept_awake_for_the_whole_show(app: QApplication, state) -> None:
+    guard = RecordingGuard()
+    show = SlideshowWindow(state.entries, SlideshowSettings(), sleep_guard=guard)
+
+    show.start()
+    _press(show, Qt.Key.Key_Space)
+    assert guard.calls == ["acquire"]
+
+    show.close()
+    assert guard.calls == ["acquire", "release"]
+
+
+def test_stepping_back_past_unreadable_photos_at_the_start_keeps_playing(
+    app: QApplication, state
+) -> None:
+    entries = tuple(state.entries[index % 4] for index in range(10))
+    show = SlideshowWindow(entries, SlideshowSettings(seconds=60, transitions=frozenset()))
+    show.setGeometry(QRect(0, 0, 320, 200))
+    show._unreadable.update(range(8))
+    show._go(0, 1)
+    show.show()
+    _pump(app, lambda: show._shown == 8)
+
+    show.previous()
+    _pump(app, lambda: show._pending is None)
+
+    assert show._shown == 8
+    assert show._dwell.isActive()
+    assert show._direction == 1
+    show.close()
+
+
+def test_menu_shortcuts_are_off_while_a_show_runs(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+
+    window._on_slideshow_prepared(state.project.id, state.entries, SlideshowSettings())
+    assert window._actions
+    assert not any(action.isEnabled() for action in window._actions)
+
+    window.retranslate()
+    assert not any(action.isEnabled() for action in window._actions)
+
+    window._slideshow.close()
+    _pump(app, lambda: window._slideshow is None)
+    assert all(action.isEnabled() for action in window._actions)
+    window.close()
+
+
+def test_an_error_after_cancel_stays_quiet(
+    app: QApplication, tmp_path: Path, library: Library, state, monkeypatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    shown: list[str] = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args: shown.append(args[2]))
+    window._preparer.cancel()
+
+    window._on_slideshow_failed("share went away")
+
+    assert shown == []
+    window.close()
+
+
+def test_a_decode_finishing_after_the_window_is_gone_is_harmless(
+    app: QApplication, state, monkeypatch
+) -> None:
+    import gc
+    import threading
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    from fotozeef.ui import slideshow_window
+
+    release = threading.Event()
+    started = threading.Event()
+    real = slideshow_window.render_slide
+
+    def slow(path, width, height):
+        started.set()
+        release.wait(10)
+        return real(path, width, height)
+
+    monkeypatch.setattr(slideshow_window, "render_slide", slow)
+    for _ in range(5):
+        release.clear()
+        started.clear()
+        show = SlideshowWindow(state.entries, SlideshowSettings())
+        show.show()
+        assert started.wait(5)
+        loader = show._loader
+        thread = loader._thread
+        show.close()
+        show.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        del show, loader
+        gc.collect()
+
+        release.set()
+        thread.join(5)
+        for _ in range(20):
+            app.processEvents()
+        gc.collect()
