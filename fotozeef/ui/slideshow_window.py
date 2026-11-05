@@ -55,6 +55,7 @@ class SlideLoader(QObject):
         self._size = (width, height)
         self._lock = threading.Lock()
         self._wanted: dict[int, Path] = {}
+        self._decoding: int | None = None
         self._thread: threading.Thread | None = None
         self._running = False
         self._closed = False
@@ -64,7 +65,7 @@ class SlideLoader(QObject):
         with self._lock:
             if self._closed:
                 return
-            self._wanted = dict(requests)
+            self._wanted = {key: path for key, path in requests if key != self._decoding}
             if self._running or not self._wanted:
                 return
             self._running = True
@@ -72,12 +73,10 @@ class SlideLoader(QObject):
             self._thread.start()
 
     def shutdown(self) -> None:
+        """Returns at once: a decode in flight finishes on its own and is never emitted."""
         with self._lock:
             self._closed = True
             self._wanted = {}
-        thread = self._thread
-        if thread is not None:
-            thread.join(timeout=20)
 
     def _drain(self) -> None:
         while True:
@@ -87,11 +86,14 @@ class SlideLoader(QObject):
                     return
                 key = next(iter(self._wanted))
                 path = self._wanted.pop(key)
+                self._decoding = key
             try:
                 slide = render_slide(path, *self._size)
             except Exception as error:
-                if not self._is_closed():
-                    self.failed.emit(key, str(error))
+                with self._lock:
+                    self._decoding = None
+                    if not self._closed:
+                        self.failed.emit(key, str(error))
                 continue
             if self._is_closed():
                 continue
@@ -105,7 +107,10 @@ class SlideLoader(QObject):
                 slide.backdrop_width * 3,
                 QImage.Format.Format_RGB888,
             ).copy()
-            self.loaded.emit(key, photo, backdrop)
+            with self._lock:
+                self._decoding = None
+                if not self._closed:
+                    self.loaded.emit(key, photo, backdrop)
 
     def _is_closed(self) -> bool:
         with self._lock:
@@ -136,6 +141,7 @@ class SlideshowWindow(QWidget):
         self._sequencer = Sequencer(len(entries), settings.order, self._rng)
         self._slides: dict[int, tuple[QPixmap, QPixmap]] = {}
         self._unreadable: set[int] = set()
+        self._unreadable_round = 0
         self._shown: int | None = None
         self._outgoing: int | None = None
         self._pending: int | None = None
@@ -154,7 +160,8 @@ class SlideshowWindow(QWidget):
             width, height = round(size.width() * ratio), round(size.height() * ratio)
         else:
             width, height = 1920, 1080
-        self._loader = SlideLoader(max(1, width), max(1, height), self)
+        # No Qt parent: the decode thread may outlive this window by one photo.
+        self._loader = SlideLoader(max(1, width), max(1, height))
         self._loader.loaded.connect(self._on_loaded)
         self._loader.failed.connect(self._on_failed)
 
@@ -214,9 +221,9 @@ class SlideshowWindow(QWidget):
             self.close()
         elif key == Qt.Key.Key_Space:
             self.toggle_pause()
-        elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown, Qt.Key.Key_Down):
+        elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown):
             self._step(self.next)
-        elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp, Qt.Key.Key_Up):
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp):
             self._step(self.previous)
         else:
             super().keyPressEvent(event)
@@ -255,12 +262,38 @@ class SlideshowWindow(QWidget):
 
     def _go(self, index: int, direction: int) -> None:
         self._direction = direction
-        self._pending = index
-        if index in self._slides:
-            self._show(index)
-        elif index in self._unreadable:
-            self._skip_unreadable(index)
-        self._request_slides()
+        readable = self._first_readable(index, direction)
+        self._pending = readable
+        if readable is None:
+            self._dwell.stop()
+            self.update()
+        elif readable in self._slides:
+            self._show(readable)
+        else:
+            self._request_slides()
+
+    def _first_readable(self, index: int, direction: int) -> int | None:
+        """Steps past photos that failed to decode; None once none of them can be read.
+
+        `index` must be the sequencer's current photo. Failures are forgotten at each
+        new round once something played, so a brief hiccup on a share costs one round.
+        """
+        for _ in range(len(self._entries) + 1):
+            if self._shown is not None and self._sequencer.round > self._unreadable_round:
+                self._unreadable.clear()
+                self._unreadable_round = self._sequencer.round
+            if index not in self._unreadable:
+                return index
+            if len(self._unreadable) >= len(self._entries):
+                return None
+            if direction < 0:
+                earlier = self._sequencer.previous()
+                if earlier != index:
+                    index = earlier
+                    continue
+                direction = 1
+            index = self._sequencer.next()
+        return None
 
     def _show(self, index: int) -> None:
         self._pending = None
@@ -286,19 +319,6 @@ class SlideshowWindow(QWidget):
             self._dwell.start(self._settings.seconds * 1000)
         self._request_slides()
         self.update()
-
-    def _skip_unreadable(self, index: int) -> None:
-        if len(self._unreadable) >= len(self._entries):
-            self._pending = None
-            self._dwell.stop()
-            self.update()
-            return
-        if self._direction < 0:
-            earlier = self._sequencer.previous()
-            if earlier != index:
-                self._go(earlier, -1)
-                return
-        self._go(self._sequencer.next(), 1)
 
     def _request_slides(self) -> None:
         """Keeps the photo on screen and the next one; everything else is let go."""
@@ -327,7 +347,7 @@ class SlideshowWindow(QWidget):
     def _on_failed(self, index: int, _message: str) -> None:
         self._unreadable.add(index)
         if index == self._pending:
-            self._skip_unreadable(index)
+            self._go(index, self._direction)
 
     def _pause(self) -> None:
         self._paused = True

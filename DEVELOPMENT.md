@@ -34,7 +34,7 @@ HEIF and RAW decoding are live in that bundle and opens a window offscreen.
 
 ```
 fotozeef/
-  core/      pure Python, no Qt imports — scanning, metadata, ordering, selection, thumbnails
+  core/      pure Python, no Qt imports — scanning, metadata, ordering, selection, thumbnails, slideshow
   ui/        PySide6 widgets
   app.py     entry point
 ```

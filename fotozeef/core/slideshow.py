@@ -165,6 +165,8 @@ def _scan_subfolders(
                 continue
             if (source.id, primary.relative_path) in known:
                 continue
+            if should_cancel is not None and should_cancel():
+                return []
             meta = read_metadata(primary.absolute_path, primary.mtime)
             extra.append(
                 Photo(
@@ -200,6 +202,11 @@ class Sequencer:
         self._rounds: list[list[int]] = [self._new_round(previous=None)]
         self._round = 0
         self._step = 0
+
+    @property
+    def round(self) -> int:
+        """How many times the show has gone all the way round."""
+        return self._round
 
     @property
     def current(self) -> int:

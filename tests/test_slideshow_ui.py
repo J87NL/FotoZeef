@@ -328,3 +328,160 @@ def test_slides_enter_from_their_own_side(transition: Transition, start: QPointF
 
     assert slide_offset(transition, 0.0, canvas) == start
     assert slide_offset(transition, 1.0, canvas) == QPointF(0, 0)
+
+
+# --- review fixes ---------------------------------------------------------------------
+
+
+def test_a_long_run_of_known_unreadable_photos_is_skipped_without_recursion(
+    app: QApplication, state
+) -> None:
+    entries = tuple(state.entries[index % 4] for index in range(1500))
+    show = SlideshowWindow(entries, SlideshowSettings(seconds=60, transitions=frozenset()))
+    show.setGeometry(QRect(0, 0, 320, 200))
+    show.show()
+    _pump(app, lambda: show._shown == 0)
+    show._unreadable.update(range(1, 1400))
+
+    show.next()
+    _pump(app, lambda: show._shown == 1400)
+    show.close()
+
+
+def test_stepping_back_skips_an_unreadable_photo_in_the_middle(app: QApplication, state) -> None:
+    show = _show(app, state)
+    for target in (1, 2):
+        show.next()
+        _pump(app, lambda target=target: show._shown == target)
+    show._unreadable.add(1)
+
+    show.previous()
+    _pump(app, lambda: show._shown == 0)
+    show.close()
+
+
+def test_failures_are_retried_in_the_next_round(app: QApplication, state) -> None:
+    show = _show(app, state)
+    show._unreadable.add(2)
+
+    for _ in range(3):
+        show.next()
+    _pump(app, lambda: show._shown == 0 and show._pending is None)
+    assert show._unreadable == set()
+
+    show.next()
+    show.next()
+    _pump(app, lambda: show._shown == 2)
+    show.close()
+
+
+def test_resuming_from_black_restarts_the_full_duration(app: QApplication, state) -> None:
+    show = _show(app, state, pause_mode=PauseMode.BLACK)
+    show._dwell.start(2_000)
+
+    _press(show, Qt.Key.Key_Space)
+    _press(show, Qt.Key.Key_Space)
+
+    assert show._dwell.remainingTime() > 50_000
+    show.close()
+
+
+def test_each_photo_is_decoded_once(app: QApplication, state, monkeypatch) -> None:
+    from fotozeef.ui import slideshow_window
+
+    decoded: list[str] = []
+    real = slideshow_window.render_slide
+
+    def counting(path, width, height):
+        decoded.append(path.name)
+        time.sleep(0.05)
+        return real(path, width, height)
+
+    monkeypatch.setattr(slideshow_window, "render_slide", counting)
+    show = _show(app, state)
+    for target in (1, 2):
+        show.next()
+        _pump(app, lambda target=target: show._shown == target)
+    _pump(app, lambda: not show._loader._running)
+
+    assert decoded == ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]
+    show.close()
+
+
+def test_closing_during_a_slow_decode_returns_at_once(
+    app: QApplication, state, monkeypatch
+) -> None:
+    import threading
+
+    from fotozeef.ui import slideshow_window
+
+    release = threading.Event()
+    started = threading.Event()
+
+    def slow(path, width, height):
+        started.set()
+        release.wait(10)
+        raise OSError("gone")
+
+    monkeypatch.setattr(slideshow_window, "render_slide", slow)
+    show = SlideshowWindow(state.entries, SlideshowSettings())
+    show.show()
+    assert started.wait(5)
+    failures: list[int] = []
+    show._loader.failed.connect(lambda key, _message: failures.append(key))
+
+    began = time.monotonic()
+    show.close()
+    assert time.monotonic() - began < 1.0
+
+    release.set()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert failures == []
+
+
+def test_a_cancelled_preparation_never_opens_a_show(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    window._preparer.cancel()
+
+    window._on_slideshow_prepared(state.project.id, state.entries, SlideshowSettings())
+
+    assert window._slideshow is None
+    window.close()
+
+
+def test_a_preparation_for_another_project_is_dropped(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+
+    window._on_slideshow_prepared(state.project.id + 1, state.entries, SlideshowSettings())
+
+    assert window._slideshow is None
+    window.close()
+
+
+def test_keys_reaching_the_main_window_during_a_show_do_not_select(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    window._on_slideshow_prepared(
+        state.project.id, state.entries, SlideshowSettings(seconds=60, transitions=frozenset())
+    )
+    show = window._slideshow
+    assert show is not None
+
+    _press(window, Qt.Key.Key_Space)
+
+    assert window._selected == set()
+    assert show.paused
+    show.close()
+    _pump(app, lambda: window._slideshow is None)
+    window.close()

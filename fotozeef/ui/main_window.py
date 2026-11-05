@@ -282,7 +282,10 @@ class MainWindow(QMainWindow):
 
     def start_slideshow(self) -> None:
         state = self._state
-        if state is None or self._preparer.busy or self._slideshow is not None:
+        if state is None or self._slideshow is not None:
+            return
+        if self._preparer.busy:
+            self.statusBar().showMessage(self.tr("Still stopping the previous preparation…"), 4000)
             return
         project_id = state.project.id
         dialog = SlideshowDialog(
@@ -314,10 +317,12 @@ class MainWindow(QMainWindow):
         self._progress = progress
 
     def _on_slideshow_prepared(
-        self, entries: tuple[TimelineEntry, ...], settings: SlideshowSettings
+        self, project_id: int, entries: tuple[TimelineEntry, ...], settings: SlideshowSettings
     ) -> None:
+        if self._preparer.cancelled:
+            return
         self._close_progress()
-        if self._state is None:
+        if self._state is None or self._state.project.id != project_id:
             return
         if not entries:
             QMessageBox.information(
@@ -386,6 +391,12 @@ class MainWindow(QMainWindow):
         self._set_cursor(index)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if self._slideshow is not None:
+            # The show lost focus (a notification, a click on the other screen):
+            # its keys must not select photos here.
+            self._slideshow.activateWindow()
+            self._slideshow.keyPressEvent(event)
+            return
         key = event.key()
         if key == Qt.Key.Key_Right:
             self.move_cursor(1)

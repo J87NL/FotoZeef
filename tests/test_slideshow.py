@@ -377,3 +377,42 @@ def test_exif_rotation_is_applied(tmp_path: Path) -> None:
     slide = render_slide(path, 1000, 1000)
 
     assert (slide.width, slide.height) == (200, 400)
+
+
+def test_cancel_stops_reading_metadata_of_subfolders(
+    tmp_path: Path, library: Library, jpeg_factory, monkeypatch
+) -> None:
+    from fotozeef.core import slideshow
+
+    source = tmp_path / "cam"
+    jpeg_factory(source / "top.jpg")
+    for index in range(20):
+        jpeg_factory(source / "sub" / f"{index}.jpg")
+    state = _project(library, [source], tmp_path / "out", recursive=False)
+    reads: list[Path] = []
+    real = slideshow.read_metadata
+    monkeypatch.setattr(
+        slideshow, "read_metadata", lambda path, mtime: reads.append(path) or real(path, mtime)
+    )
+
+    collect_slides(
+        state.entries,
+        state.sources,
+        (),
+        SlideshowSettings(),
+        project_scans_subfolders=False,
+        destination=state.project.destination,
+        should_cancel=lambda: len(reads) >= 3,
+    )
+
+    assert len(reads) == 3
+
+
+def test_the_round_counter_follows_the_show() -> None:
+    sequencer = Sequencer(2, SlideOrder.CHRONOLOGICAL)
+    assert sequencer.round == 0
+
+    sequencer.next()
+    sequencer.next()
+
+    assert sequencer.round == 1

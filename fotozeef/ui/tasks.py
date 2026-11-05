@@ -109,7 +109,7 @@ class SelectionQueue(QObject):
 class SlideshowPreparer(QObject):
     """Builds a show's playlist off the GUI thread: it may have to scan subfolders."""
 
-    prepared = Signal(object, object)
+    prepared = Signal(int, object, object)
     failed = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -135,6 +135,11 @@ class SlideshowPreparer(QObject):
 
     def cancel(self) -> None:
         self._cancel.set()
+
+    @property
+    def cancelled(self) -> bool:
+        """Checked again on the GUI thread: a result may already be queued at Cancel."""
+        return self._cancel.is_set()
 
     def wait(self, timeout: float = 5.0) -> None:
         if self._thread is not None:
@@ -163,4 +168,4 @@ class SlideshowPreparer(QObject):
             return
         if self._cancel.is_set():
             return
-        self.prepared.emit(slides, settings)
+        self.prepared.emit(project.id, slides, settings)
