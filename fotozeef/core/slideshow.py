@@ -237,7 +237,8 @@ class Sequencer:
         return self.current
 
     def previous(self) -> int:
-        """Steps back through what was actually shown; the very first photo stays put."""
+        """Steps back through the order: what was shown, or before a mid-show start the
+        photos that come earlier. The first photo of the first round stays put."""
         if self._step > 0:
             self._step -= 1
         elif self._round > 0:
@@ -270,6 +271,11 @@ def start_position(slides: Sequence[TimelineEntry], current: TimelineEntry | Non
     key = ordering.timeline_key(current)
     for index, entry in enumerate(slides):
         if entry.photo.id == current.photo.id and entry.source.id == current.source.id:
+            return index
+    # Overlapping sources: the show kept the other copy of this very file.
+    path = _resolved(current.absolute_path)
+    for index, entry in enumerate(slides):
+        if path is not None and _resolved(entry.absolute_path) == path:
             return index
     for index, entry in enumerate(slides):
         if ordering.timeline_key(entry) >= key:

@@ -762,9 +762,7 @@ def test_a_one_round_show_ends_on_black_after_the_last_photo(app: QApplication, 
 
 def test_space_at_the_end_plays_again_from_the_start(app: QApplication, state) -> None:
     show = _show(app, state, stop_after_one_round=True)
-    for _ in range(4):
-        show._advance()
-    _pump(app, lambda: show.ended)
+    _play_to_the_end(app, show)
 
     _press(show, Qt.Key.Key_Space)
 
@@ -777,13 +775,12 @@ def test_space_at_the_end_plays_again_from_the_start(app: QApplication, state) -
 
 def test_back_at_the_end_shows_the_last_photo_paused(app: QApplication, state) -> None:
     show = _show(app, state, stop_after_one_round=True)
-    for _ in range(4):
-        show._advance()
-    _pump(app, lambda: show.ended and show._shown == 3)
+    _play_to_the_end(app, show)
 
     _press(show, Qt.Key.Key_Left)
 
-    _pump(app, lambda: show._shown == 2 and show._veil == 0.0)
+    _pump(app, lambda: show._veil == 0.0)
+    assert show._shown == 3, "the photo the round ended on, not the one before"
     assert show.paused
     assert not show.ended
     show.close()
@@ -907,3 +904,216 @@ def test_a_missing_screen_falls_back_to_the_one_fotozeef_is_on(
 
     assert window._slideshow_screen(SlideshowSettings(screen="nope")) is window.screen()
     window.close()
+
+
+def _click(show, button: Qt.MouseButton) -> None:
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    show.mousePressEvent(
+        QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(10, 10),
+            QPointF(10, 10),
+            button,
+            button,
+            Qt.KeyboardModifier.NoModifier,
+        )
+    )
+
+
+def _play_to_the_end(app: QApplication, show) -> None:
+    """As the timer does: each step only once the photo before it is on screen."""
+    for target in (1, 2, 3):
+        show._advance()
+        _pump(app, lambda target=target: show._shown == target)
+    show._advance()
+    _pump(app, lambda: show.ended)
+
+
+def test_a_right_click_at_the_end_shows_the_last_photo(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    _play_to_the_end(app, show)
+
+    _click(show, Qt.MouseButton.RightButton)
+
+    _pump(app, lambda: show._veil == 0.0)
+    assert show._shown == 3
+    assert show.paused
+    show.close()
+
+
+def test_a_left_click_at_the_end_plays_again(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    _play_to_the_end(app, show)
+
+    _click(show, Qt.MouseButton.LeftButton)
+
+    _pump(app, lambda: show._shown == 0)
+    assert not show.paused
+    show.close()
+
+
+def test_back_after_an_unreadable_tail_shows_the_last_readable_photo(
+    app: QApplication, state
+) -> None:
+    state.entries[3].absolute_path.write_bytes(b"broken")
+    show = _show(app, state, stop_after_one_round=True)
+    for target in (1, 2):
+        show._advance()
+        _pump(app, lambda target=target: show._shown == target)
+    show._advance()
+    _pump(app, lambda: show.ended)
+
+    _press(show, Qt.Key.Key_Left)
+
+    _pump(app, lambda: show._veil == 0.0)
+    assert show._shown == 2
+    show.close()
+
+
+def test_the_black_key_at_the_end_shows_the_last_photo(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    _play_to_the_end(app, show)
+
+    _press(show, Qt.Key.Key_B)
+
+    _pump(app, lambda: show._veil == 0.0)
+    assert show._shown == 3
+    assert not show.ended
+    show.close()
+
+
+def test_a_slow_last_photo_is_shown_before_a_one_round_show_ends(
+    app: QApplication, state, monkeypatch
+) -> None:
+    import threading
+
+    from fotozeef.ui import slideshow_window
+
+    gate = threading.Event()
+    real = slideshow_window.render_slide
+
+    def slow_last(path, width, height):
+        if path.name == "3.jpg":
+            gate.wait(5)
+        return real(path, width, height)
+
+    monkeypatch.setattr(slideshow_window, "render_slide", slow_last)
+    show = _show(app, state, stop_after_one_round=True, seconds=1)
+    _press(show, Qt.Key.Key_Right)
+    _pump(app, lambda: show._shown == 1)
+    _press(show, Qt.Key.Key_Right)
+    _pump(app, lambda: show._shown == 2)
+    _press(show, Qt.Key.Key_Right)
+
+    deadline = time.monotonic() + 1.5
+    while time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    assert not show.ended, "the old timer must not end the show while the last photo loads"
+
+    gate.set()
+    _pump(app, lambda: show._shown == 3)
+    assert not show.ended
+    show.close()
+
+
+def test_left_from_a_mid_show_start_goes_to_the_earlier_photo(app: QApplication, state) -> None:
+    show = SlideshowWindow(
+        state.entries, SlideshowSettings(seconds=60, transitions=frozenset()), start_index=2
+    )
+    show.setGeometry(QRect(0, 0, 320, 200))
+    show.show()
+    _pump(app, lambda: show._shown == 2)
+
+    _press(show, Qt.Key.Key_Left)
+
+    _pump(app, lambda: show._shown == 1)
+    show.close()
+
+
+def test_a_one_round_show_starting_on_an_unreadable_last_photo_ends(
+    app: QApplication, state
+) -> None:
+    state.entries[3].absolute_path.write_bytes(b"broken")
+    show = SlideshowWindow(
+        state.entries,
+        SlideshowSettings(seconds=60, transitions=frozenset(), stop_after_one_round=True),
+        start_index=3,
+    )
+    show.setGeometry(QRect(0, 0, 320, 200))
+    show.show()
+
+    _pump(app, lambda: show.ended)
+    assert show._shown is None
+    show.close()
+
+
+def test_a_connected_stored_screen_is_used(
+    app: QApplication, tmp_path: Path, library: Library
+) -> None:
+    from PySide6.QtGui import QGuiApplication
+
+    from fotozeef.ui.main_window import screen_key
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    screens = QGuiApplication.screens()
+    target = screens[-1]
+
+    chosen = window._slideshow_screen(SlideshowSettings(screen=screen_key(target, screens)))
+
+    assert chosen is target
+    window.close()
+
+
+def test_random_order_ignores_start_at_current(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    window.go_to(3)
+
+    window._on_slideshow_prepared(
+        state.project.id,
+        state.entries[:1],
+        SlideshowSettings(order=SlideOrder.RANDOM, start_at_current=True, seconds=60),
+    )
+
+    show = window._slideshow
+    _pump(app, lambda: show._shown == 0)
+    show.close()
+    _pump(app, lambda: window._slideshow is None)
+    window.close()
+
+
+class FakeScreen:
+    def __init__(self, name: str, x: int, y: int = 0) -> None:
+        self._name = name
+        self._corner = (x, y)
+
+    def name(self) -> str:
+        return self._name
+
+    def geometry(self):
+        from PySide6.QtCore import QRect
+
+        return QRect(self._corner[0], self._corner[1], 1920, 1080)
+
+
+def test_screens_with_the_same_name_are_told_apart_by_place() -> None:
+    from fotozeef.ui.main_window import find_screen, screen_key
+
+    laptop = FakeScreen("Built-in Retina Display", 0)
+    left = FakeScreen("DELL U2415", 1920)
+    right = FakeScreen("DELL U2415", 3840)
+    screens = [laptop, left, right]
+
+    keys = [screen_key(screen, screens) for screen in screens]
+
+    assert keys == ["Built-in Retina Display", "DELL U2415@1920,0", "DELL U2415@3840,0"]
+    assert find_screen(keys[2], screens) is right
+    assert find_screen("DELL U2415@9999,0", screens) is left, "moved: the first with that name"
+    assert find_screen("DELL U2415", [laptop, right]) is right
+    assert find_screen("HDMI-9", screens) is None
+    assert find_screen("", screens) is None

@@ -65,7 +65,10 @@ You choose:
 - **When paused** — keep the photo on screen, or go to black.
 - **Screen** — only shown with more than one screen: the screen FotoZeef is
   on, or a specific one. A chosen screen that is not connected falls back to
-  the screen FotoZeef is on.
+  the screen FotoZeef is on. Two screens of the same model are told apart by
+  where they sit. On Wayland the desktop decides where a fullscreen window
+  goes; if the show opens on the wrong screen there, move FotoZeef to the
+  projector first and choose *The screen FotoZeef is on*.
 
 The settings are stored with the project, also when you only close the window,
 so a show can be set up in advance. The selection folder is never played, so

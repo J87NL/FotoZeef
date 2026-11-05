@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -296,7 +296,8 @@ class MainWindow(QMainWindow):
             len(self._selected),
             self,
             screens=tuple(
-                (screen.name(), _screen_label(screen)) for screen in QGuiApplication.screens()
+                (screen_key(screen, QGuiApplication.screens()), _screen_label(screen))
+                for screen in QGuiApplication.screens()
             ),
         )
         dialog.exec()
@@ -354,10 +355,7 @@ class MainWindow(QMainWindow):
 
     def _slideshow_screen(self, settings: SlideshowSettings) -> QScreen | None:
         """The chosen screen when it is connected, otherwise the one FotoZeef is on."""
-        for screen in QGuiApplication.screens():
-            if settings.screen and screen.name() == settings.screen:
-                return screen
-        return self.screen()
+        return find_screen(settings.screen, QGuiApplication.screens()) or self.screen()
 
     def _on_slideshow_failed(self, message: str) -> None:
         if self._preparer.cancelled:
@@ -789,8 +787,33 @@ def _short_path(path: Path) -> str:
 def _screen_label(screen: QScreen) -> str:
     size = screen.size()
     model = " ".join(part for part in (screen.manufacturer(), screen.model()) if part).strip()
-    name = f"{model} — {screen.name()}" if model else screen.name()
+    name = screen.name()
+    if model and model != name:
+        name = f"{model} — {name}"
     return f"{name} ({size.width()} x {size.height()})"
+
+
+def screen_key(screen: QScreen, screens: Sequence[QScreen]) -> str:
+    """The screen's name; with two of the same name (macOS uses the model) also its place."""
+    name = screen.name()
+    if sum(1 for other in screens if other.name() == name) < 2:
+        return name
+    corner = screen.geometry().topLeft()
+    return f"{name}@{corner.x()},{corner.y()}"
+
+
+def find_screen(key: str, screens: Sequence[QScreen]) -> QScreen | None:
+    """The screen a stored key names: exactly, else the first with that name."""
+    if not key:
+        return None
+    for screen in screens:
+        if screen_key(screen, screens) == key:
+            return screen
+    name = key.rsplit("@", 1)[0] if "@" in key else key
+    for screen in screens:
+        if screen.name() == name:
+            return screen
+    return None
 
 
 def screen_scale(app: QApplication) -> float:

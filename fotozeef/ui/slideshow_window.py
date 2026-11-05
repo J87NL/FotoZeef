@@ -160,7 +160,8 @@ class SlideshowWindow(QWidget):
         self._rng = rng or random.Random()
         self._sequencer = Sequencer(len(entries), settings.order, self._rng, start=start_index)
         self._ended = False
-        self._automatic = False
+        # The first photo is not chosen by hand, so a one-round show may end on it.
+        self._automatic = True
         self._reached_end = False
         self._slides: dict[int, tuple[QPixmap, QPixmap]] = {}
         self._unreadable: set[int] = set()
@@ -316,7 +317,12 @@ class SlideshowWindow(QWidget):
 
     def back(self) -> None:
         self._automatic = False
-        self._ended = False
+        if self._ended:
+            # The last photo that played is still there under the black: show it.
+            self._ended = False
+            self._black_resumes = False
+            self._fade_veil(0.0)
+            return
         self._step(self.previous)
 
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -390,6 +396,8 @@ class SlideshowWindow(QWidget):
         elif readable in self._slides:
             self._show(readable)
         else:
+            # The previous photo's timer must not fire while this one loads.
+            self._dwell.stop()
             self._request_slides()
 
     def _first_readable(self, index: int, direction: int) -> tuple[int | None, int]:

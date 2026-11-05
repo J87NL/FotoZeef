@@ -494,3 +494,23 @@ def test_the_start_is_the_current_photo_or_the_next_in_time(
     assert start_position(chosen, entries[4]) == 0, "nothing later: from the start"
     assert start_position(chosen, None) == 0
     assert start_position((), entries[1]) == 0
+
+
+def test_the_start_finds_the_kept_copy_of_a_file_from_overlapping_sources(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    from fotozeef.core.slideshow import start_position
+
+    source = tmp_path / "cam"
+    jpeg_factory(source / "a.jpg", captured_at=datetime(2024, 1, 1, 9))
+    jpeg_factory(source / "sub" / "b.jpg", captured_at=datetime(2024, 1, 1, 10))
+    jpeg_factory(source / "sub" / "c.jpg", captured_at=datetime(2024, 1, 1, 11))
+    state = _project(library, [source, source / "sub"], tmp_path / "out", recursive=True)
+    slides = _collect(state, SlideshowSettings())
+    dropped = next(
+        entry
+        for entry in state.entries
+        if entry.absolute_path.name == "b.jpg" and entry not in slides
+    )
+
+    assert slides[start_position(slides, dropped)].absolute_path.name == "b.jpg"
