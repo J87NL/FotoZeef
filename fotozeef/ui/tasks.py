@@ -5,7 +5,9 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 
-from fotozeef.core.library import Library
+from fotozeef.core.library import Library, ProjectState
+from fotozeef.core.models import Project, Source, TimelineEntry
+from fotozeef.core.slideshow import SlideshowSettings, collect_slides
 
 
 class ProjectOpener(QObject):
@@ -102,3 +104,63 @@ class SelectionQueue(QObject):
                 self.failed.emit(photo_id, selected, str(error))
                 continue
             self.done.emit(photo_id, selected)
+
+
+class SlideshowPreparer(QObject):
+    """Builds a show's playlist off the GUI thread: it may have to scan subfolders."""
+
+    prepared = Signal(object, object)
+    failed = Signal(str)
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._cancel = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @property
+    def busy(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def start(self, state: ProjectState, selected: set[int], settings: SlideshowSettings) -> None:
+        if self.busy:
+            return
+        self._cancel.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(state.entries, state.sources, frozenset(selected), settings, state.project),
+            name="slideshow-prepare",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self._cancel.set()
+
+    def wait(self, timeout: float = 5.0) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+    def _run(
+        self,
+        entries: tuple[TimelineEntry, ...],
+        sources: tuple[Source, ...],
+        selected: frozenset[int],
+        settings: SlideshowSettings,
+        project: Project,
+    ) -> None:
+        try:
+            slides = collect_slides(
+                entries,
+                sources,
+                selected,
+                settings,
+                project_scans_subfolders=project.settings.recursive,
+                destination=project.destination,
+                should_cancel=self._cancel.is_set,
+            )
+        except Exception as error:
+            self.failed.emit(str(error))
+            return
+        if self._cancel.is_set():
+            return
+        self.prepared.emit(slides, settings)

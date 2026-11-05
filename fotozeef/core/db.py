@@ -18,7 +18,7 @@ from fotozeef.core.models import (
     Source,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE projects (
@@ -70,6 +70,15 @@ CREATE INDEX idx_sources_project ON sources(project_id);
 CREATE INDEX idx_photos_source ON photos(source_id);
 CREATE INDEX idx_selections_project ON selections(project_id);
 """
+
+_MIGRATIONS: dict[int, str] = {
+    2: """
+CREATE TABLE IF NOT EXISTS slideshow_settings (
+    project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    payload    TEXT NOT NULL
+);
+""",
+}
 
 
 def utcnow() -> datetime:
@@ -158,6 +167,9 @@ class Database:
         with self._write_lock, connection:
             if version == 0:
                 connection.executescript(_SCHEMA)
+                version = 1
+            for step in range(version + 1, SCHEMA_VERSION + 1):
+                connection.executescript(_MIGRATIONS[step])
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -411,6 +423,29 @@ class SelectionRepository:
     def remove(self, photo_id: int) -> None:
         with self._db.write() as connection:
             connection.execute("DELETE FROM selections WHERE photo_id = ?", (photo_id,))
+
+
+class SlideshowRepository:
+    """One stored set of slideshow settings per project, kept as JSON."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def get(self, project_id: int) -> str | None:
+        row = self._db.connection.execute(
+            "SELECT payload FROM slideshow_settings WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["payload"])
+
+    def save(self, project_id: int, payload: str) -> None:
+        with self._db.write() as connection:
+            connection.execute(
+                "INSERT INTO slideshow_settings (project_id, payload) VALUES (?, ?)"
+                " ON CONFLICT (project_id) DO UPDATE SET payload = excluded.payload",
+                (project_id, payload),
+            )
 
 
 def _project_from_row(row: sqlite3.Row) -> Project:

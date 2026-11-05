@@ -110,6 +110,7 @@ class AboutDialog(QDialog):
             (self.tr("Wheel, drag, double click"), self.tr("Zoom around the pointer, pan, toggle")),
             ("F", self.tr("Fullscreen")),
             ("Esc", self.tr("Unzoom, then leave fullscreen")),
+            ("F5", self.tr("Slideshow: Space pauses, arrows step, Esc stops")),
             ("Ctrl+N / Ctrl+O / Ctrl+W", self.tr("New / open / close project")),
             ("Ctrl+,", self.tr("Project settings")),
         ]

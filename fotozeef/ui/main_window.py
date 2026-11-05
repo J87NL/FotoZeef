@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from fotozeef.appinfo import APP_NAME
 from fotozeef.core.library import Library, ProjectState
 from fotozeef.core.models import TimelineEntry
+from fotozeef.core.slideshow import PhotoScope, SlideshowSettings
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
@@ -36,8 +37,10 @@ from fotozeef.ui.offset_dialog import OffsetDialog
 from fotozeef.ui.open_dialog import OpenProjectDialog
 from fotozeef.ui.project_dialog import ProjectDialog
 from fotozeef.ui.settings_dialog import SettingsDialog
+from fotozeef.ui.slideshow_dialog import SlideshowDialog
+from fotozeef.ui.slideshow_window import SlideshowWindow
 from fotozeef.ui.start_screen import StartScreen
-from fotozeef.ui.tasks import ProjectOpener, SelectionQueue
+from fotozeef.ui.tasks import ProjectOpener, SelectionQueue, SlideshowPreparer
 from fotozeef.ui.thumbnail_service import ThumbnailService
 from fotozeef.ui.translations import available_languages, current_language, install, save_language
 from fotozeef.ui.viewer import Viewer
@@ -101,6 +104,11 @@ class MainWindow(QMainWindow):
         self._opener.failed.connect(self._on_project_failed)
         self._opener.progress.connect(self._on_scan_progress)
 
+        self._slideshow: SlideshowWindow | None = None
+        self._preparer = SlideshowPreparer(self)
+        self._preparer.prepared.connect(self._on_slideshow_prepared)
+        self._preparer.failed.connect(self._on_slideshow_failed)
+
         self._selection_queue = SelectionQueue(self)
         self._selection_queue.failed.connect(self._on_selection_failed)
 
@@ -138,6 +146,7 @@ class MainWindow(QMainWindow):
     def close_project(self) -> None:
         if self._state is None:
             return
+        self.stop_slideshow()
         self.leave_fullscreen()
         self._cursor_timer.stop()
         self._persist_cursor()
@@ -271,6 +280,72 @@ class MainWindow(QMainWindow):
         self.statusBar().setVisible(True)
         self._filmstrip.setVisible(True)
 
+    def start_slideshow(self) -> None:
+        state = self._state
+        if state is None or self._preparer.busy or self._slideshow is not None:
+            return
+        project_id = state.project.id
+        dialog = SlideshowDialog(
+            self._library.slideshow_settings(project_id), len(self._selected), self
+        )
+        dialog.exec()
+        settings = dialog.settings
+        self._library.save_slideshow_settings(project_id, settings)
+        if not dialog.start_requested:
+            return
+        self.leave_fullscreen()
+        self._show_slideshow_progress()
+        self._preparer.start(state, set(self._selected), settings)
+
+    def stop_slideshow(self) -> None:
+        self._preparer.cancel()
+        self._close_progress()
+        if self._slideshow is not None:
+            self._slideshow.close()
+
+    def _show_slideshow_progress(self) -> None:
+        progress = QProgressDialog(
+            self.tr("Preparing the slideshow…"), self.tr("Cancel"), 0, 0, self
+        )
+        progress.setWindowTitle(APP_NAME)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.canceled.connect(self._preparer.cancel)
+        self._progress = progress
+
+    def _on_slideshow_prepared(
+        self, entries: tuple[TimelineEntry, ...], settings: SlideshowSettings
+    ) -> None:
+        self._close_progress()
+        if self._state is None:
+            return
+        if not entries:
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                self.tr("No photos are selected yet.")
+                if settings.scope is PhotoScope.SELECTED
+                else self.tr("There are no photos to show."),
+            )
+            return
+        show = SlideshowWindow(entries, settings, self.screen())
+        show.closed.connect(self._on_slideshow_closed)
+        self._slideshow = show
+        show.start()
+
+    def _on_slideshow_failed(self, message: str) -> None:
+        self._close_progress()
+        QMessageBox.critical(
+            self, APP_NAME, self.tr("Could not start the slideshow:\n{0}").format(message)
+        )
+
+    def _on_slideshow_closed(self) -> None:
+        show = self._slideshow
+        self._slideshow = None
+        if show is not None:
+            show.deleteLater()
+        self.activateWindow()
+
     def toggle_selection(self) -> None:
         state = self._state
         if state is None or not state.entries:
@@ -347,6 +422,8 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.stop_slideshow()
+        self._preparer.wait()
         self._cursor_timer.stop()
         self._persist_cursor()
         self._opener.cancel()
@@ -373,6 +450,7 @@ class MainWindow(QMainWindow):
 
         view_menu = self.menuBar().addMenu(self.tr("&View"))
         self._add(view_menu, self.tr("&Fullscreen"), "F", self.toggle_fullscreen)
+        self._add(view_menu, self.tr("&Slideshow…"), "F5", self.start_slideshow)
         view_menu.addSeparator()
         self._add(view_menu, self.tr("Zoom &in"), keys.ZoomIn, self.zoom_in)
         self._add(view_menu, self.tr("Zoom &out"), keys.ZoomOut, self.zoom_out)

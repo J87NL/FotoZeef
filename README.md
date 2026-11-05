@@ -38,10 +38,42 @@ space to keep.
 | `1` | Actual size |
 | `F` | Fullscreen |
 | `Esc` | Unzoom, then leave fullscreen |
+| `F5` | Slideshow (see below) |
 | `Ctrl/Cmd + N` | New project |
 | `Ctrl/Cmd + O` | Open project |
 | `Ctrl/Cmd + W` | Close project |
 | `Ctrl/Cmd + ,` | Project settings |
+
+## Slideshow
+
+*View ▸ Slideshow…* (`F5`) plays the open project fullscreen, on the screen
+FotoZeef is on. Each photo is as large as the screen allows without cropping;
+the space beside it is filled with a blurred, dimmed copy of the same photo.
+For a projector, duplicate your screen and start the show there.
+
+You choose:
+
+- **Photos** — all photos, with or without subfolders, or only the selected ones.
+- **Each photo** — how many seconds a photo stays on screen.
+- **Order** — chronological (by capture time, camera offsets included) or random.
+  Random plays every photo once before reshuffling.
+- **Transitions** — fade, or slide in from the left, right, top or bottom. Tick
+  several and they take turns at random; tick none for a plain cut.
+- **When paused** — keep the photo on screen, or go to black.
+
+The settings are stored with the project, also when you only close the window,
+so a show can be set up in advance. The selection folder is never played, so
+copies of your favourites do not show up twice.
+
+| Key | During the show |
+|---|---|
+| `Space` | Pause / resume |
+| `→` / `PgDn` | Next photo |
+| `←` / `PgUp` | Previous photo |
+| `Esc` | Stop |
+
+`PgUp` and `PgDn` are what most presentation remotes send. Stepping while the
+screen is black brings the photo back; the show stays paused until `Space`.
 
 ## Good to know
 

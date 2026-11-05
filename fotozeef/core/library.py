@@ -13,6 +13,7 @@ from fotozeef.core.db import (
     PhotoRepository,
     ProjectRepository,
     SelectionRepository,
+    SlideshowRepository,
     SourceRepository,
 )
 from fotozeef.core.metadata import read_metadata
@@ -26,6 +27,7 @@ from fotozeef.core.models import (
     TimelineEntry,
 )
 from fotozeef.core.scanner import ScannedGroup, scan
+from fotozeef.core.slideshow import SlideshowSettings
 
 DEFAULT_DESTINATION_NAME = "selectie"
 
@@ -72,6 +74,7 @@ class Library:
         self.sources = SourceRepository(db)
         self.photos = PhotoRepository(db)
         self.selections = SelectionRepository(db)
+        self.slideshows = SlideshowRepository(db)
 
     def close(self) -> None:
         self._db.close()
@@ -270,6 +273,12 @@ class Library:
             opened_at=state.project.opened_at,
         )
         return state
+
+    def slideshow_settings(self, project_id: int) -> SlideshowSettings:
+        return SlideshowSettings.from_json(self.slideshows.get(project_id))
+
+    def save_slideshow_settings(self, project_id: int, settings: SlideshowSettings) -> None:
+        self.slideshows.save(project_id, settings.to_json())
 
     def _draft(self, group: ScannedGroup, known: Photo | None) -> PhotoDraft:
         primary = group.primary

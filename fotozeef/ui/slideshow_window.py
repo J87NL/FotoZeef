@@ -1,0 +1,437 @@
+from __future__ import annotations
+
+import random
+import threading
+from collections.abc import Callable
+from pathlib import Path
+
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QObject,
+    QPointF,
+    QRectF,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
+from PySide6.QtGui import (
+    QCloseEvent,
+    QColor,
+    QGuiApplication,
+    QImage,
+    QKeyEvent,
+    QPainter,
+    QPaintEvent,
+    QPixmap,
+    QScreen,
+)
+from PySide6.QtWidgets import QWidget
+
+from fotozeef.core.models import TimelineEntry
+from fotozeef.core.slideshow import (
+    PauseMode,
+    Sequencer,
+    SlideshowSettings,
+    Transition,
+    choose_transition,
+)
+from fotozeef.core.thumbnails import render_slide
+
+TRANSITION_MS = 800
+VEIL_MS = 400
+CAPTION = QColor(150, 150, 156)
+
+
+class SlideLoader(QObject):
+    """Decodes slides off the GUI thread, most wanted first; stale requests are dropped."""
+
+    loaded = Signal(int, QImage, QImage)
+    failed = Signal(int, str)
+
+    def __init__(self, width: int, height: int, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._size = (width, height)
+        self._lock = threading.Lock()
+        self._wanted: dict[int, Path] = {}
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._closed = False
+
+    def want(self, requests: list[tuple[int, Path]]) -> None:
+        """Replaces whatever was queued; the first request is decoded first."""
+        with self._lock:
+            if self._closed:
+                return
+            self._wanted = dict(requests)
+            if self._running or not self._wanted:
+                return
+            self._running = True
+            self._thread = threading.Thread(target=self._drain, name="slides", daemon=True)
+            self._thread.start()
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._wanted = {}
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=20)
+
+    def _drain(self) -> None:
+        while True:
+            with self._lock:
+                if not self._wanted or self._closed:
+                    self._running = False
+                    return
+                key = next(iter(self._wanted))
+                path = self._wanted.pop(key)
+            try:
+                slide = render_slide(path, *self._size)
+            except Exception as error:
+                if not self._is_closed():
+                    self.failed.emit(key, str(error))
+                continue
+            if self._is_closed():
+                continue
+            photo = QImage(
+                slide.photo, slide.width, slide.height, slide.width * 3, QImage.Format.Format_RGB888
+            ).copy()
+            backdrop = QImage(
+                slide.backdrop,
+                slide.backdrop_width,
+                slide.backdrop_height,
+                slide.backdrop_width * 3,
+                QImage.Format.Format_RGB888,
+            ).copy()
+            self.loaded.emit(key, photo, backdrop)
+
+    def _is_closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+
+class SlideshowWindow(QWidget):
+    """A fullscreen show. Space pauses, arrows or page keys step, Esc stops."""
+
+    closed = Signal()
+
+    def __init__(
+        self,
+        entries: tuple[TimelineEntry, ...],
+        settings: SlideshowSettings,
+        screen: QScreen | None = None,
+        rng: random.Random | None = None,
+    ) -> None:
+        super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setCursor(Qt.CursorShape.BlankCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setWindowTitle(self.tr("Slideshow"))
+
+        self._entries = entries
+        self._settings = settings
+        self._rng = rng or random.Random()
+        self._sequencer = Sequencer(len(entries), settings.order, self._rng)
+        self._slides: dict[int, tuple[QPixmap, QPixmap]] = {}
+        self._unreadable: set[int] = set()
+        self._shown: int | None = None
+        self._outgoing: int | None = None
+        self._pending: int | None = None
+        self._direction = 1
+        self._transition: Transition | None = None
+        self._progress = 1.0
+        self._paused = False
+        self._remaining_ms: int | None = None
+
+        screen = screen or QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.setScreen(screen)
+            self.setGeometry(screen.geometry())
+            ratio = screen.devicePixelRatio()
+            size = screen.geometry().size()
+            width, height = round(size.width() * ratio), round(size.height() * ratio)
+        else:
+            width, height = 1920, 1080
+        self._loader = SlideLoader(max(1, width), max(1, height), self)
+        self._loader.loaded.connect(self._on_loaded)
+        self._loader.failed.connect(self._on_failed)
+
+        self._dwell = QTimer(self)
+        self._dwell.setSingleShot(True)
+        self._dwell.timeout.connect(self.next)
+
+        self._animation = QVariantAnimation(self)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        self._animation.setDuration(TRANSITION_MS)
+        self._animation.valueChanged.connect(self._on_progress)
+
+        self._veil = 0.0
+        self._veil_animation = QVariantAnimation(self)
+        self._veil_animation.setDuration(VEIL_MS)
+        self._veil_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._veil_animation.valueChanged.connect(self._on_veil)
+
+        self._pending = self._sequencer.current
+        self._request_slides()
+
+    @property
+    def current_index(self) -> int | None:
+        """Playlist index on screen, or the one being waited for."""
+        return self._pending if self._pending is not None else self._shown
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    @property
+    def blacked_out(self) -> bool:
+        return self._paused and self._veil_target() > 0
+
+    def start(self) -> None:
+        self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+        self.setFocus()
+
+    def next(self) -> None:
+        self._go(self._sequencer.next(), direction=1)
+
+    def previous(self) -> None:
+        self._go(self._sequencer.previous(), direction=-1)
+
+    def toggle_pause(self) -> None:
+        if self._paused:
+            self._resume()
+        else:
+            self._pause()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
+            self.close()
+        elif key == Qt.Key.Key_Space:
+            self.toggle_pause()
+        elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown, Qt.Key.Key_Down):
+            self._step(self.next)
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp, Qt.Key.Key_Up):
+            self._step(self.previous)
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._dwell.stop()
+        self._animation.stop()
+        self._veil_animation.stop()
+        self._loader.shutdown()
+        super().closeEvent(event)
+        self.closed.emit()
+
+    def paintEvent(self, _event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), Qt.GlobalColor.black)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        canvas = QRectF(self.rect())
+        if self._shown is None:
+            self._draw_waiting(painter, canvas)
+        elif self._outgoing is None or self._progress >= 1.0:
+            self._draw_slide(painter, canvas, self._shown, QPointF(0, 0), 1.0)
+        else:
+            self._draw_transition(painter, canvas)
+        if self._veil > 0:
+            painter.fillRect(self.rect(), QColor(0, 0, 0, round(255 * self._veil)))
+        painter.end()
+
+    def _step(self, move: Callable[[], None]) -> None:
+        """Manual steps keep a pause; a black pause turns into a held one."""
+        if self._paused and self._veil_target() > 0:
+            self._fade_veil(0.0)
+        self._remaining_ms = None
+        move()
+
+    def _go(self, index: int, direction: int) -> None:
+        self._direction = direction
+        self._pending = index
+        if index in self._slides:
+            self._show(index)
+        elif index in self._unreadable:
+            self._skip_unreadable(index)
+        self._request_slides()
+
+    def _show(self, index: int) -> None:
+        self._pending = None
+        if self._shown is None:
+            self._outgoing = None
+            self._transition = None
+            self._progress = 1.0
+        elif index != self._shown:
+            self._outgoing = self._shown
+            self._transition = choose_transition(self._settings.transitions, self._rng)
+            self._progress = 0.0 if self._transition is not None else 1.0
+        self._shown = index
+        self._animation.stop()
+        if self._transition is not None and self._progress < 1.0:
+            curve = (
+                QEasingCurve.Type.InOutQuad
+                if self._transition is Transition.FADE
+                else QEasingCurve.Type.OutCubic
+            )
+            self._animation.setEasingCurve(curve)
+            self._animation.start()
+        if not self._paused:
+            self._dwell.start(self._settings.seconds * 1000)
+        self._request_slides()
+        self.update()
+
+    def _skip_unreadable(self, index: int) -> None:
+        if len(self._unreadable) >= len(self._entries):
+            self._pending = None
+            self._dwell.stop()
+            self.update()
+            return
+        if self._direction < 0:
+            earlier = self._sequencer.previous()
+            if earlier != index:
+                self._go(earlier, -1)
+                return
+        self._go(self._sequencer.next(), 1)
+
+    def _request_slides(self) -> None:
+        """Keeps the photo on screen and the next one; everything else is let go."""
+        keep = [
+            index
+            for index in (self._pending, self._shown, self._sequencer.peek())
+            if index is not None
+        ]
+        if self._outgoing is not None and self._progress < 1.0:
+            keep.append(self._outgoing)
+        for index in list(self._slides):
+            if index not in keep:
+                del self._slides[index]
+        missing = [
+            (index, self._entries[index].absolute_path)
+            for index in dict.fromkeys(keep)
+            if index not in self._slides and index not in self._unreadable
+        ]
+        self._loader.want(missing)
+
+    def _on_loaded(self, index: int, photo: QImage, backdrop: QImage) -> None:
+        self._slides[index] = (QPixmap.fromImage(photo), QPixmap.fromImage(backdrop))
+        if index == self._pending:
+            self._show(index)
+
+    def _on_failed(self, index: int, _message: str) -> None:
+        self._unreadable.add(index)
+        if index == self._pending:
+            self._skip_unreadable(index)
+
+    def _pause(self) -> None:
+        self._paused = True
+        if self._dwell.isActive():
+            self._remaining_ms = self._dwell.remainingTime()
+        self._dwell.stop()
+        if self._settings.pause_mode is PauseMode.BLACK:
+            self._fade_veil(1.0)
+
+    def _resume(self) -> None:
+        self._paused = False
+        black = self._veil_target() > 0
+        if black:
+            self._fade_veil(0.0)
+        if self._shown is None or self._pending is not None:
+            return
+        remaining = self._remaining_ms
+        self._remaining_ms = None
+        if black or remaining is None or remaining <= 0:
+            remaining = self._settings.seconds * 1000
+        self._dwell.start(remaining)
+
+    def _veil_target(self) -> float:
+        if self._veil_animation.state() == QAbstractAnimation.State.Running:
+            return float(self._veil_animation.endValue())
+        return self._veil
+
+    def _fade_veil(self, target: float) -> None:
+        self._veil_animation.stop()
+        self._veil_animation.setStartValue(self._veil)
+        self._veil_animation.setEndValue(target)
+        self._veil_animation.start()
+
+    def _on_veil(self, value: object) -> None:
+        self._veil = float(value)  # type: ignore[arg-type]
+        self.update()
+
+    def _on_progress(self, value: object) -> None:
+        self._progress = float(value)  # type: ignore[arg-type]
+        if self._progress >= 1.0:
+            self._outgoing = None
+        self.update()
+
+    def _draw_transition(self, painter: QPainter, canvas: QRectF) -> None:
+        assert self._outgoing is not None and self._shown is not None
+        self._draw_slide(painter, canvas, self._outgoing, QPointF(0, 0), 1.0)
+        progress = self._progress
+        if self._transition is Transition.FADE:
+            self._draw_slide(painter, canvas, self._shown, QPointF(0, 0), progress)
+            return
+        self._draw_slide(
+            painter, canvas, self._shown, slide_offset(self._transition, progress, canvas), 1.0
+        )
+
+    def _draw_slide(
+        self,
+        painter: QPainter,
+        canvas: QRectF,
+        index: int,
+        offset: QPointF,
+        opacity: float,
+    ) -> None:
+        slide = self._slides.get(index)
+        if slide is None:
+            return
+        photo, backdrop = slide
+        frame = canvas.translated(offset)
+        painter.save()
+        painter.setOpacity(opacity)
+        painter.drawPixmap(frame, backdrop, QRectF(backdrop.rect()))
+        target = fit_rect(photo.width(), photo.height(), frame)
+        painter.drawPixmap(target, photo, QRectF(photo.rect()))
+        painter.restore()
+
+    def _draw_waiting(self, painter: QPainter, canvas: QRectF) -> None:
+        if len(self._unreadable) < len(self._entries):
+            return
+        painter.setPen(CAPTION)
+        painter.drawText(
+            canvas,
+            int(Qt.AlignmentFlag.AlignCenter),
+            self.tr("None of these photos could be read. Esc closes the slideshow."),
+        )
+
+
+def slide_offset(transition: Transition | None, progress: float, canvas: QRectF) -> QPointF:
+    """Where an incoming photo sits: off screen on its own side at 0, in place at 1."""
+    left = 1.0 - min(max(progress, 0.0), 1.0)
+    if transition is Transition.SLIDE_LEFT:
+        return QPointF(-canvas.width() * left, 0)
+    if transition is Transition.SLIDE_RIGHT:
+        return QPointF(canvas.width() * left, 0)
+    if transition is Transition.SLIDE_TOP:
+        return QPointF(0, -canvas.height() * left)
+    if transition is Transition.SLIDE_BOTTOM:
+        return QPointF(0, canvas.height() * left)
+    return QPointF(0, 0)
+
+
+def fit_rect(width: int, height: int, frame: QRectF) -> QRectF:
+    """The largest rectangle with the photo's proportions that fits the frame, centred."""
+    if width <= 0 or height <= 0:
+        return QRectF(frame)
+    scale = min(frame.width() / width, frame.height() / height)
+    target = QRectF(0, 0, width * scale, height * scale)
+    target.moveCenter(frame.center())
+    return target
