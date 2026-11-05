@@ -66,9 +66,17 @@ so a show can be set up in advance. The selection folder is never played, so
 copies of your favourites do not show up twice.
 
 While a show runs, the screen does not go to sleep and the screensaver stays
-away — on Windows, on macOS (via `caffeinate`) and on Linux desktops that offer
-the freedesktop screensaver interface (GNOME, KDE, Xfce and most others). Where
-that is not available the show plays on regardless.
+away:
+
+- **Windows** — the display stays on, and the show window turns down the
+  screensaver while it is in front. A lock-screen policy set by an
+  organisation still applies.
+- **macOS** — via `caffeinate`, which ends by itself if FotoZeef does.
+- **Linux** — on desktops that offer the freedesktop screensaver interface
+  (GNOME, KDE, Xfce and most others). Not on compositors without it, such as
+  sway, and not from inside a Flatpak.
+
+Where none of that is available the show plays on regardless.
 
 | Key | During the show |
 |---|---|

@@ -12,6 +12,14 @@ from fotozeef.appinfo import APP_NAME
 _log = logging.getLogger(__name__)
 
 REASON = "Playing a slideshow"
+DBUS_TIMEOUT_MS = 1000
+
+# WM_SYSCOMMAND and the two commands that start the screensaver or turn the
+# monitor off, from winuser.h. SetThreadExecutionState does not stop the
+# screensaver, so the show window turns these down itself.
+WM_SYSCOMMAND = 0x0112
+SC_SCREENSAVE = 0xF140
+SC_MONITORPOWER = 0xF170
 
 # SetThreadExecutionState flags, from winbase.h.
 ES_CONTINUOUS = 0x80000000
@@ -128,6 +136,10 @@ class MacBackend:
             process.wait(timeout=2)
         except subprocess.TimeoutExpired:
             process.kill()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                _log.warning("caffeinate did not exit")
 
 
 class InhibitSession(Protocol):
@@ -178,23 +190,28 @@ class QtDBusSession:
         self._bus = QDBusConnection.connectToBus(QDBusConnection.BusType.SessionBus, self._name)
 
     def inhibit(self) -> bool:
-        from PySide6.QtDBus import QDBusInterface, QDBusMessage
+        """One plain call with a short timeout: a hung screensaver must not hold up a show."""
+        from PySide6.QtDBus import QDBus, QDBusMessage
 
         if not self._bus.isConnected():
             _log.info("no D-Bus session bus; the screensaver may start during the show")
             return False
-        service, path, interface = _FREEDESKTOP
-        proxy = QDBusInterface(service, path, interface, self._bus)
-        if not proxy.isValid():
-            _log.info("%s is not available; the screensaver may start", service)
-            return False
-        reply = proxy.call("Inhibit", APP_NAME, REASON)
+        message = QDBusMessage.createMethodCall(*_FREEDESKTOP, "Inhibit")
+        message.setArguments([APP_NAME, REASON])
+        reply = self._bus.call(message, QDBus.CallMode.Block, DBUS_TIMEOUT_MS)
         if reply.type() == QDBusMessage.MessageType.ErrorMessage:
             _log.info("the screensaver refused to stay away: %s", reply.errorMessage())
             return False
         return True
 
     def close(self) -> None:
+        """Drops this object's handle first: Qt keeps a referenced connection open."""
         from PySide6.QtDBus import QDBusConnection
 
+        self._bus = QDBusConnection("")
         QDBusConnection.disconnectFromBus(self._name)
+
+
+def blocks_power_command(message: int, command: int) -> bool:
+    """Whether a Windows message would start the screensaver or switch the monitor off."""
+    return message == WM_SYSCOMMAND and (command & 0xFFF0) in (SC_SCREENSAVE, SC_MONITORPOWER)

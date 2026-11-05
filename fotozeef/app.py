@@ -88,7 +88,11 @@ def selftest() -> int:
         backend = default_backend()
         if isinstance(backend, DBusBackend):
             try:
-                import PySide6.QtDBus  # noqa: F401
+                from PySide6.QtDBus import QDBusConnection
+
+                # Loads libdbus; whether a session bus is there does not matter here.
+                QDBusConnection.connectToBus(QDBusConnection.BusType.SessionBus, "selftest")
+                QDBusConnection.disconnectFromBus("selftest")
             except ImportError as error:
                 print(f"selftest failed: QtDBus missing: {error}", file=sys.stderr)
                 return 1

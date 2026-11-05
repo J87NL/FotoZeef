@@ -144,14 +144,41 @@ def test_macos_runs_caffeinate_tied_to_this_process() -> None:
     assert process.events == ["terminate"]
 
 
-def test_macos_kills_a_caffeinate_that_will_not_stop() -> None:
+def test_macos_kills_and_reaps_a_caffeinate_that_will_not_stop() -> None:
     process = FakeProcess(hangs=True)
+    waits: list[float] = []
+    real_wait = process.wait
+
+    def wait(timeout: float) -> int:
+        waits.append(timeout)
+        if process.events[-1] == "kill":
+            return 0
+        return real_wait(timeout)
+
+    process.wait = wait  # type: ignore[method-assign]
     backend = MacBackend(lambda *_args, **_kwargs: process, pid=1)
 
     backend.acquire()
     backend.release()
 
     assert process.events == ["terminate", "kill"]
+    assert len(waits) == 2, "a killed caffeinate is waited for, so it is not left a zombie"
+
+
+@pytest.mark.parametrize(
+    ("message", "command", "blocked"),
+    [
+        (0x0112, 0xF140, True),
+        (0x0112, 0xF170, True),
+        (0x0112, 0xF172, True),
+        (0x0112, 0xF060, False),
+        (0x0100, 0xF140, False),
+    ],
+)
+def test_windows_turns_down_the_screensaver_and_monitor_off(
+    message: int, command: int, blocked: bool
+) -> None:
+    assert sleep_guard.blocks_power_command(message, command) is blocked
 
 
 class FakeSession:
@@ -269,3 +296,58 @@ def test_linux_inhibits_on_a_real_session_bus(tmp_path: Path) -> None:
     assert lines[0] == "active True INHIBIT FotoZeef Playing a slideshow"
     assert lines[1] == "held 1"
     assert lines[2] == "after 0"
+
+
+HUNG_SCREENSAVER = textwrap.dedent(
+    """
+    import time
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtDBus import QDBusConnection
+
+    app = QCoreApplication([])
+    QDBusConnection.sessionBus().registerService("org.freedesktop.ScreenSaver")
+    print("READY", flush=True)
+    time.sleep(120)
+    """
+)
+
+HUNG_CLIENT = textwrap.dedent(
+    """
+    import subprocess, sys, time
+    from PySide6.QtCore import QCoreApplication
+    from fotozeef.ui.sleep_guard import DBusBackend, SleepGuard
+
+    app = QCoreApplication([])
+    saver = subprocess.Popen([sys.executable, sys.argv[1]], stdout=subprocess.PIPE, text=True)
+    assert saver.stdout.readline().strip() == "READY"
+    began = time.monotonic()
+    guard = SleepGuard(DBusBackend())
+    guard.acquire()
+    print(guard.active, round(time.monotonic() - began, 1))
+    saver.kill()
+    """
+)
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or shutil.which("dbus-run-session") is None,
+    reason="needs a Linux D-Bus daemon",
+)
+def test_a_hung_screensaver_does_not_hold_up_the_show(tmp_path: Path) -> None:
+    saver = tmp_path / "saver.py"
+    client = tmp_path / "client.py"
+    saver.write_text(HUNG_SCREENSAVER)
+    client.write_text(HUNG_CLIENT)
+
+    result = subprocess.run(
+        ["dbus-run-session", "--", sys.executable, str(client), str(saver)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    active, seconds = result.stdout.split()
+    assert active == "False"
+    assert float(seconds) < 3

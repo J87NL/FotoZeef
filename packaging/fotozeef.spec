@@ -25,21 +25,23 @@ excludes = [
     "tkinter",
 ]
 
+# QtDBus keeps the screensaver away during a slideshow on Linux. It is imported
+# lazily, so it is named here; Windows and macOS do not need it.
+linux_only = ["PySide6.QtDBus"] if sys.platform.startswith("linux") else []
+
 analysis = Analysis(
     [str(ROOT / "fotozeef" / "app.py")],
     pathex=[str(ROOT)],
     binaries=binaries,
     datas=[(str(ROOT / "fotozeef" / "resources"), "fotozeef/resources")],
-    # QtDBus keeps the screensaver away during a slideshow on Linux; it is
-    # imported lazily, so it is named here.
-    hiddenimports=["pillow_heif", "rawpy", "exifread", "PySide6.QtDBus"],
+    hiddenimports=["pillow_heif", "rawpy", "exifread", *linux_only],
     hookspath=[],
     runtime_hooks=[],
     excludes=excludes,
     noarchive=False,
 )
 
-# FotoZeef uses only QtCore, QtGui and QtWidgets. PySide6's hooks pull in the
+# FotoZeef uses QtCore, QtGui and QtWidgets, plus QtDBus on Linux. PySide6's hooks pull in the
 # rest of Qt anyway, so the unused halves are dropped here. Every pattern below
 # was removed and then verified with `FotoZeef --selftest`.
 UNUSED = (

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import random
+import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -38,7 +40,9 @@ from fotozeef.core.slideshow import (
     choose_transition,
 )
 from fotozeef.core.thumbnails import render_slide
-from fotozeef.ui.sleep_guard import SleepGuard
+from fotozeef.ui.sleep_guard import SleepGuard, blocks_power_command
+
+_log = logging.getLogger(__name__)
 
 TRANSITION_MS = 800
 VEIL_MS = 400
@@ -154,6 +158,7 @@ class SlideshowWindow(QWidget):
         self._transition: Transition | None = None
         self._progress = 1.0
         self._paused = False
+        self._black_resumes = False
         self._remaining_ms: int | None = None
 
         screen = screen or QGuiApplication.primaryScreen()
@@ -224,13 +229,35 @@ class SlideshowWindow(QWidget):
             self._pause(black=self._settings.pause_mode is PauseMode.BLACK)
 
     def toggle_black(self) -> None:
-        """The black-screen key of a presenter remote, whatever pausing is set to."""
+        """The black-screen key of a presenter remote, whatever pausing is set to.
+
+        Pressed again it goes back to how things were: playing, or a pause that
+        was already there before the screen went black.
+        """
         if self._paused and self._veil_target() > 0:
-            self._resume()
+            if self._black_resumes:
+                self._resume()
+            else:
+                self._fade_veil(0.0)
         elif self._paused:
+            self._black_resumes = False
             self._fade_veil(1.0)
         else:
+            self._black_resumes = True
             self._pause(black=True)
+
+    def nativeEvent(self, event_type: object, message: object) -> tuple[bool, int]:
+        """On Windows, turns down the screensaver and monitor-off while the show is in front."""
+        if sys.platform == "win32" and bytes(event_type) == b"windows_generic_MSG":  # type: ignore[arg-type]
+            try:
+                from ctypes import wintypes
+
+                msg = wintypes.MSG.from_address(int(message))  # type: ignore[call-overload]
+                if blocks_power_command(msg.message, msg.wParam):
+                    return True, 0
+            except Exception:
+                _log.debug("could not read a native event", exc_info=True)
+        return super().nativeEvent(event_type, message)  # type: ignore[arg-type]
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()
@@ -276,6 +303,7 @@ class SlideshowWindow(QWidget):
     def _step(self, move: Callable[[], None]) -> None:
         """Manual steps keep a pause; a black pause turns into a held one."""
         if self._paused and self._veil_target() > 0:
+            self._black_resumes = False
             self._fade_veil(0.0)
         self._remaining_ms = None
         move()

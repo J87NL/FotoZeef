@@ -512,10 +512,38 @@ def test_the_black_key_during_a_held_pause_stays_paused(app: QApplication, state
     _press(show, Qt.Key.Key_Space)
 
     _press(show, Qt.Key.Key_B)
-
     assert show.paused
     assert show.blacked_out
+
+    _press(show, Qt.Key.Key_B)
+    assert show.paused, "the pause from before the black screen is kept"
+    assert not show.blacked_out
     assert not show._dwell.isActive()
+    show.close()
+
+
+def test_the_black_key_after_stepping_out_of_black_stays_paused(app: QApplication, state) -> None:
+    show = _show(app, state)
+    _press(show, Qt.Key.Key_B)
+    _press(show, Qt.Key.Key_Right)
+    _pump(app, lambda: show._shown == 1)
+
+    _press(show, Qt.Key.Key_B)
+    _press(show, Qt.Key.Key_B)
+
+    assert show.paused
+    assert not show._dwell.isActive()
+    show.close()
+
+
+def test_space_ends_a_black_screen_from_the_black_key(app: QApplication, state) -> None:
+    show = _show(app, state, pause_mode=PauseMode.HOLD)
+    _press(show, Qt.Key.Key_B)
+
+    _press(show, Qt.Key.Key_Space)
+
+    assert not show.paused
+    assert not show.blacked_out
     show.close()
 
 
@@ -625,6 +653,7 @@ def test_a_decode_finishing_after_the_window_is_gone_is_harmless(
         show.show()
         assert started.wait(5)
         loader = show._loader
+        assert loader.parent() is show, "Qt must delete the loader on the GUI thread"
         thread = loader._thread
         show.close()
         show.deleteLater()
@@ -634,6 +663,7 @@ def test_a_decode_finishing_after_the_window_is_gone_is_harmless(
 
         release.set()
         thread.join(5)
+        assert not thread.is_alive()
         for _ in range(20):
             app.processEvents()
         gc.collect()
