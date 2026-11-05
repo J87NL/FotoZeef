@@ -7,8 +7,10 @@ on:
   # The Build workflow runs these tests before it publishes a release.
   workflow_call:
 
+# Called from Build, github.workflow is "Build", so a test build of a branch
+# never cancels that branch's own CI run, nor the other way round.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
