@@ -667,3 +667,75 @@ def test_a_decode_finishing_after_the_window_is_gone_is_harmless(
         for _ in range(20):
             app.processEvents()
         gc.collect()
+
+
+def test_the_black_key_ignores_what_happened_before(app: QApplication, state) -> None:
+    """B, B, Space, B in black mode must end like Space, B: paused with the photo back."""
+    show = _show(app, state, pause_mode=PauseMode.BLACK)
+    _press(show, Qt.Key.Key_B)
+    _press(show, Qt.Key.Key_B)
+    _press(show, Qt.Key.Key_Space)
+
+    _press(show, Qt.Key.Key_B)
+
+    assert show.paused
+    assert not show.blacked_out
+    show.close()
+
+
+def _pointer(structure):
+    """What Qt hands nativeEvent: a shiboken VoidPtr to the native message."""
+    import ctypes
+
+    from shiboken6 import VoidPtr
+
+    return VoidPtr(ctypes.addressof(structure))
+
+
+def _windows_message(command: int, argument: int = 0):
+    from ctypes import wintypes
+
+    message = wintypes.MSG()
+    message.message = 0x0112
+    message.wParam = command
+    message.lParam = argument
+    return message
+
+
+@pytest.mark.parametrize(
+    ("command", "argument", "swallowed"),
+    [(0xF140, 0, True), (0xF170, 2, True), (0xF170, -1, False), (0xF060, 0, False)],
+)
+def test_on_windows_the_show_window_turns_down_the_screensaver(
+    app: QApplication, state, monkeypatch, command: int, argument: int, swallowed: bool
+) -> None:
+
+    from PySide6.QtCore import QByteArray
+
+    from fotozeef.ui import slideshow_window
+
+    monkeypatch.setattr(slideshow_window, "_ON_WINDOWS", True)
+    show = SlideshowWindow(state.entries, SlideshowSettings())
+    message = _windows_message(command, argument)
+
+    handled, result = show.nativeEvent(QByteArray(b"windows_generic_MSG"), _pointer(message))
+
+    assert handled is swallowed
+    assert result == 0
+    show.close()
+
+
+def test_other_platforms_never_read_native_events(app: QApplication, state, monkeypatch) -> None:
+
+    from PySide6.QtCore import QByteArray
+
+    from fotozeef.ui import slideshow_window
+
+    monkeypatch.setattr(slideshow_window, "_ON_WINDOWS", False)
+    show = SlideshowWindow(state.entries, SlideshowSettings())
+    message = _windows_message(0xF140)
+
+    assert show.nativeEvent(QByteArray(b"windows_generic_MSG"), _pointer(message)) == (False, 0)
+    monkeypatch.setattr(slideshow_window, "_ON_WINDOWS", True)
+    assert show.nativeEvent(QByteArray(b"xcb_generic_event_t"), _pointer(message)) == (False, 0)
+    show.close()

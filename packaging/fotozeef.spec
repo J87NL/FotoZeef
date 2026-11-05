@@ -41,9 +41,9 @@ analysis = Analysis(
     noarchive=False,
 )
 
-# FotoZeef uses QtCore, QtGui and QtWidgets, plus QtDBus on Linux. PySide6's hooks pull in the
-# rest of Qt anyway, so the unused halves are dropped here. Every pattern below
-# was removed and then verified with `FotoZeef --selftest`.
+# FotoZeef uses QtCore, QtGui and QtWidgets, plus QtDBus on Linux. PySide6's
+# hooks pull in the rest of Qt anyway, so the unused halves are dropped here.
+# Every pattern below was removed and then verified with `FotoZeef --selftest`.
 UNUSED = (
     "Qt6Quick",
     "Qt6Qml",

@@ -212,6 +212,17 @@ class QtDBusSession:
         QDBusConnection.disconnectFromBus(self._name)
 
 
-def blocks_power_command(message: int, command: int) -> bool:
-    """Whether a Windows message would start the screensaver or switch the monitor off."""
-    return message == WM_SYSCOMMAND and (command & 0xFFF0) in (SC_SCREENSAVE, SC_MONITORPOWER)
+MONITOR_ON = -1
+
+
+def blocks_power_command(message: int, command: int, argument: int = 0) -> bool:
+    """Whether a Windows message would start the screensaver or switch the monitor off.
+
+    `SC_MONITORPOWER` with -1 switches the monitor on, and that is let through.
+    """
+    if message != WM_SYSCOMMAND:
+        return False
+    kind = command & 0xFFF0
+    if kind == SC_SCREENSAVE:
+        return True
+    return kind == SC_MONITORPOWER and argument != MONITOR_ON

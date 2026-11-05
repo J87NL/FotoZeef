@@ -166,19 +166,20 @@ def test_macos_kills_and_reaps_a_caffeinate_that_will_not_stop() -> None:
 
 
 @pytest.mark.parametrize(
-    ("message", "command", "blocked"),
+    ("message", "command", "argument", "blocked"),
     [
-        (0x0112, 0xF140, True),
-        (0x0112, 0xF170, True),
-        (0x0112, 0xF172, True),
-        (0x0112, 0xF060, False),
-        (0x0100, 0xF140, False),
+        (0x0112, 0xF140, 0, True),
+        (0x0112, 0xF170, 2, True),
+        (0x0112, 0xF172, 1, True),
+        (0x0112, 0xF170, -1, False),
+        (0x0112, 0xF060, 0, False),
+        (0x0100, 0xF140, 0, False),
     ],
 )
 def test_windows_turns_down_the_screensaver_and_monitor_off(
-    message: int, command: int, blocked: bool
+    message: int, command: int, argument: int, blocked: bool
 ) -> None:
-    assert sleep_guard.blocks_power_command(message, command) is blocked
+    assert sleep_guard.blocks_power_command(message, command, argument) is blocked
 
 
 class FakeSession:

@@ -44,6 +44,15 @@ from fotozeef.ui.sleep_guard import SleepGuard, blocks_power_command
 
 _log = logging.getLogger(__name__)
 
+try:
+    from ctypes import wintypes
+except (ImportError, ValueError):  # pragma: no cover - only very old non-Windows builds
+    wintypes = None  # type: ignore[assignment]
+
+# Only Windows pays for reading native events; elsewhere nativeEvent returns at once.
+_ON_WINDOWS = sys.platform == "win32" and wintypes is not None
+_WINDOWS_MESSAGE = b"windows_generic_MSG"
+
 TRANSITION_MS = 800
 VEIL_MS = 400
 CAPTION = QColor(150, 150, 156)
@@ -243,17 +252,15 @@ class SlideshowWindow(QWidget):
             self._black_resumes = False
             self._fade_veil(1.0)
         else:
-            self._black_resumes = True
             self._pause(black=True)
+            self._black_resumes = True
 
     def nativeEvent(self, event_type: object, message: object) -> tuple[bool, int]:
         """On Windows, turns down the screensaver and monitor-off while the show is in front."""
-        if sys.platform == "win32" and bytes(event_type) == b"windows_generic_MSG":  # type: ignore[arg-type]
+        if _ON_WINDOWS and event_type == _WINDOWS_MESSAGE:
             try:
-                from ctypes import wintypes
-
                 msg = wintypes.MSG.from_address(int(message))  # type: ignore[call-overload]
-                if blocks_power_command(msg.message, msg.wParam):
+                if blocks_power_command(msg.message, msg.wParam, msg.lParam):
                     return True, 0
             except Exception:
                 _log.debug("could not read a native event", exc_info=True)
@@ -400,6 +407,7 @@ class SlideshowWindow(QWidget):
 
     def _pause(self, black: bool) -> None:
         self._paused = True
+        self._black_resumes = False
         if self._dwell.isActive():
             self._remaining_ms = self._dwell.remainingTime()
         self._dwell.stop()
@@ -408,6 +416,7 @@ class SlideshowWindow(QWidget):
 
     def _resume(self) -> None:
         self._paused = False
+        self._black_resumes = False
         black = self._veil_target() > 0
         if black:
             self._fade_veil(0.0)
