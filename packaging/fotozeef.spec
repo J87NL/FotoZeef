@@ -134,7 +134,7 @@ if sys.platform == "darwin":
             "CFBundleDisplayName": APP_NAME,
             "CFBundleShortVersionString": APP_VERSION,
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "12.0",
+            "LSMinimumSystemVersion": "13.0",  # PySide6 6.11 wheels need macOS 13
             "NSDesktopFolderUsageDescription": "FotoZeef reads the photo folders you choose.",
             "NSDocumentsFolderUsageDescription": "FotoZeef reads the photo folders you choose.",
             "NSRemovableVolumesUsageDescription": "FotoZeef reads photos from memory cards.",

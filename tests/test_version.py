@@ -15,5 +15,12 @@ def test_every_copy_of_the_version_agrees() -> None:
     installer = (ROOT / "packaging" / "windows" / "installer.iss").read_text(encoding="utf-8")
     match = re.search(r'^#define AppVersion "([^"]+)"', installer, re.MULTILINE)
 
+    manifest = (ROOT / "packaging" / "windows" / "fotozeef.manifest").read_text(encoding="utf-8")
+    identity = re.search(r'name="nl\.j87\.FotoZeef" version="([^"]+)\.0"', manifest)
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    locked = next(item["version"] for item in lock["package"] if item["name"] == "fotozeef")
+
     assert match is not None
-    assert project["project"]["version"] == APP_VERSION == match.group(1)
+    assert identity is not None
+    version = project["project"]["version"]
+    assert version == APP_VERSION == match.group(1) == identity.group(1) == locked

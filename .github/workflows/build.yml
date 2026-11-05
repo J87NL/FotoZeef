@@ -5,13 +5,18 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# A pushed v* tag builds all three and publishes them as a GitHub Release.
-# Run by hand (Actions > Build > Run workflow) it only builds, for testing a
-# branch; the downloads are then under the run's artifacts.
+# A pushed v* tag runs the tests on all three systems, builds all three and
+# publishes them as a GitHub Release. Run by hand (Actions > Build > Run
+# workflow) it only builds, also when run on a tag; the downloads are then
+# under the run's artifacts.
 permissions:
   contents: read
 
 jobs:
+  tests:
+    name: Tests
+    uses: ./.github/workflows/ci.yml
+
   version:
     name: Version check
     runs-on: ubuntu-latest
@@ -154,6 +159,11 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
+          name: fotozeef-windows-installer
+          path: packaging/windows/Output/*.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
           name: fotozeef-windows
           path: |
             packaging/windows/Output/*.exe
@@ -161,15 +171,27 @@ jobs:
 
   release:
     name: Publish the release
-    needs: [version, linux, macos, windows]
-    if: github.ref_type == 'tag'
+    needs: [tests, version, linux, macos, windows]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # Only the three downloads; the unpacked Windows folder is not needed here.
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: fotozeef-linux-appimage
+          path: artifacts/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: fotozeef-macos
+          path: artifacts/macos
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: fotozeef-windows-installer
+          path: artifacts/windows
 
       - name: Create the release with the three downloads
         env:
@@ -177,9 +199,9 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           files=(
-            artifacts/fotozeef-linux-appimage/FotoZeef-"$VERSION"-*.AppImage
-            artifacts/fotozeef-macos/FotoZeef-"$VERSION"-macos.zip
-            artifacts/fotozeef-windows/packaging/windows/Output/FotoZeef-"$VERSION"-setup.exe
+            artifacts/linux/FotoZeef-"$VERSION"-*.AppImage
+            artifacts/macos/FotoZeef-"$VERSION"-macos.zip
+            artifacts/windows/FotoZeef-"$VERSION"-setup.exe
           )
           for file in "${files[@]}"; do
             if [ ! -f "$file" ]; then
@@ -189,7 +211,9 @@ jobs:
             fi
           done
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # A re-run after a failed upload: the release may be a leftover draft.
             gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$GITHUB_REF_NAME" "${files[@]}" \
               --repo "$GITHUB_REPOSITORY" \

@@ -95,9 +95,9 @@ folder.
 PyInstaller does not cross-compile: each build must be made on its own
 operating system. GitHub Actions does all three (see [Releasing](#releasing));
 locally you build the one you are sitting in front of. The version lives in
-three places — `pyproject.toml`, `fotozeef/appinfo.py` and
-`packaging/windows/installer.iss` — and `tests/test_version.py` fails when they
-disagree.
+`pyproject.toml`, `fotozeef/appinfo.py`, `packaging/windows/installer.iss`,
+`packaging/windows/fotozeef.manifest` and `uv.lock`; `tests/test_version.py`
+fails when they disagree.
 
 ### Linux — AppImage
 
@@ -140,19 +140,21 @@ uv sync
 bash packaging/macos/build_app.sh
 ```
 
-Unsigned, so the first launch needs right-click ▸ Open. Set
+Unsigned, so the first launch needs *Open Anyway* under *System Settings ▸
+Privacy & Security* (right-click ▸ Open on macOS 14 and older). Set
 `MACOS_SIGN_IDENTITY` and `MACOS_NOTARY_PROFILE` to sign and notarise; those
 paths are wired but untested, since there is no certificate yet. The release
 build comes from GitHub's `macos-latest` runner, which is Apple silicon, so the
-download is for M1 and later.
+download is for M1 and later, on macOS 13 or newer (what PySide6 6.11 needs).
 
 ## Releasing
 
 GitHub Actions builds the releases; no Mac or Windows machine is needed. For a
 public repository the hosted runners cost nothing, macOS included.
 
-1. Raise the version in `pyproject.toml`, `fotozeef/appinfo.py` and
-   `packaging/windows/installer.iss`, run `uv lock`, and merge that to `main`.
+1. Raise the version in `pyproject.toml`, `fotozeef/appinfo.py`,
+   `packaging/windows/installer.iss` and `packaging/windows/fotozeef.manifest`
+   (as `X.Y.Z.0`), run `uv lock`, and merge that to `main`.
 2. Tag the merge on `main` and push the tag:
 
    ```bash
@@ -161,14 +163,16 @@ public repository the hosted runners cost nothing, macOS included.
    git push origin v0.2.0
    ```
 
-The *Build* workflow then checks that the tag matches the version, builds and
-boots the AppImage, the macOS app and the Windows installer, and publishes them
-as a GitHub Release with notes generated from the merged pull requests. If the
-tag does not match `pyproject.toml`, it stops before building anything.
+The *Build* workflow then checks that the tag matches the version, runs the full
+test suite on Linux, macOS and Windows, builds and boots the AppImage, the macOS
+app and the Windows installer, and publishes them as a GitHub Release with notes
+generated from the merged pull requests. If the tag does not match
+`pyproject.toml` it stops before building; if a test fails nothing is
+published. A failed upload can be fixed with *Re-run failed jobs*.
 
 To try a branch without releasing, run the workflow by hand: *Actions ▸ Build ▸
 Run workflow*, pick the branch. The three builds then appear under that run's
-*Artifacts*, and nothing is published.
+*Artifacts*. A run started by hand never publishes, also not on a tag.
 
 [uv]: https://docs.astral.sh/uv/
 [Inno Setup]: https://jrsoftware.org/isinfo.php

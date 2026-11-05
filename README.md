@@ -16,10 +16,12 @@ Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases)
   which every desktop already has.
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
 - **macOS** — `FotoZeef-<version>-macos.zip`, for Macs with Apple silicon (M1
-  and later). Unzip it and move `FotoZeef.app` to *Applications*. The app is not
-  signed by Apple, so the first time macOS refuses to open it: right-click it ▸
-  *Open* ▸ *Open*, or allow it under *System Settings ▸ Privacy & Security*.
-  After that it opens normally. It is built and started automatically on a Mac
+  and later) on macOS 13 Ventura or newer. Unzip it and move `FotoZeef.app` to
+  *Applications*. The app is not signed by Apple, so the first time macOS
+  refuses to open it. Open it once, close the warning, then go to *System
+  Settings ▸ Privacy & Security* and choose *Open Anyway* next to FotoZeef.
+  (On macOS 14 and older, right-click the app ▸ *Open* also works.) After that
+  it opens normally. It is built and started automatically on a Mac
   for every release, but has had less hands-on testing than the other two; if
   something is off, please open an issue.
 
