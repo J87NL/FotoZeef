@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -36,7 +37,9 @@ class SlideshowDialog(QDialog):
         settings: SlideshowSettings,
         selected_count: int,
         parent: QWidget | None = None,
+        screens: tuple[tuple[str, str], ...] = (),
     ) -> None:
+        """`screens` lists (name, label) per screen; the choice shows only with two or more."""
         super().__init__(parent)
         self.setWindowTitle(self.tr("Slideshow"))
         self.setMinimumWidth(440)
@@ -68,6 +71,27 @@ class SlideshowDialog(QDialog):
         order_group.addButton(self._random)
         self._chronological.setChecked(settings.order is SlideOrder.CHRONOLOGICAL)
         self._random.setChecked(settings.order is SlideOrder.RANDOM)
+        self._start_at_current = QCheckBox(self.tr("Start at the current photo"), self)
+        self._start_at_current.setChecked(settings.start_at_current)
+        self._start_at_current.setEnabled(settings.order is SlideOrder.CHRONOLOGICAL)
+        self._chronological.toggled.connect(self._start_at_current.setEnabled)
+        self._stop_after_one_round = QCheckBox(
+            self.tr("Stop after one round, on a black screen"), self
+        )
+        self._stop_after_one_round.setChecked(settings.stop_after_one_round)
+
+        self._screen = QComboBox(self)
+        self._screen.addItem(self.tr("The screen FotoZeef is on"), "")
+        for name, label in screens:
+            self._screen.addItem(label, name)
+        stored = self._screen.findData(settings.screen)
+        self._screen.setCurrentIndex(max(stored, 0))
+        if stored < 0 and settings.screen:
+            # Not connected now; keep the choice for when it is.
+            self._screen.addItem(
+                self.tr("{0} (not connected)").format(settings.screen), settings.screen
+            )
+            self._screen.setCurrentIndex(self._screen.count() - 1)
 
         self._transitions: dict[Transition, QCheckBox] = {
             Transition.FADE: QCheckBox(self.tr("Fade"), self),
@@ -101,12 +125,21 @@ class SlideshowDialog(QDialog):
         playback_form.addRow(self.tr("Each photo"), self._seconds)
         order_box = QVBoxLayout()
         order_box.addWidget(self._chronological)
+        start_row = QHBoxLayout()
+        start_row.setContentsMargins(SUBOPTION_INDENT, 0, 0, 0)
+        start_row.addWidget(self._start_at_current)
+        order_box.addLayout(start_row)
         order_box.addWidget(self._random)
         playback_form.addRow(self.tr("Order"), order_box)
+        playback_form.addRow("", self._stop_after_one_round)
         pause_box = QVBoxLayout()
         pause_box.addWidget(self._hold)
         pause_box.addWidget(self._black)
         playback_form.addRow(self.tr("When paused (Space)"), pause_box)
+        if len(screens) > 1:
+            playback_form.addRow(self.tr("Screen"), self._screen)
+        else:
+            self._screen.hide()
 
         effects = QGroupBox(self.tr("Transitions"), self)
         effects_layout = QVBoxLayout(effects)
@@ -141,6 +174,9 @@ class SlideshowDialog(QDialog):
                 transition for transition, box in self._transitions.items() if box.isChecked()
             ),
             pause_mode=PauseMode.BLACK if self._black.isChecked() else PauseMode.HOLD,
+            stop_after_one_round=self._stop_after_one_round.isChecked(),
+            start_at_current=self._start_at_current.isChecked(),
+            screen=str(self._screen.currentData() or ""),
         )
 
     def _accept_start(self) -> None:

@@ -739,3 +739,171 @@ def test_other_platforms_never_read_native_events(app: QApplication, state, monk
     monkeypatch.setattr(slideshow_window, "_ON_WINDOWS", True)
     assert show.nativeEvent(QByteArray(b"xcb_generic_event_t"), _pointer(message)) == (False, 0)
     show.close()
+
+
+# --- one round, start photo, screen, mouse --------------------------------------------
+
+
+def test_a_one_round_show_ends_on_black_after_the_last_photo(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    for target in (1, 2, 3):
+        show._advance()
+        _pump(app, lambda target=target: show._shown == target)
+
+    show._advance()
+
+    assert show.ended
+    assert show.paused
+    assert show.blacked_out
+    assert show._shown == 3
+    assert not show._dwell.isActive()
+    show.close()
+
+
+def test_space_at_the_end_plays_again_from_the_start(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    for _ in range(4):
+        show._advance()
+    _pump(app, lambda: show.ended)
+
+    _press(show, Qt.Key.Key_Space)
+
+    _pump(app, lambda: show._shown == 0)
+    assert not show.ended
+    assert not show.paused
+    assert show._dwell.isActive()
+    show.close()
+
+
+def test_back_at_the_end_shows_the_last_photo_paused(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    for _ in range(4):
+        show._advance()
+    _pump(app, lambda: show.ended and show._shown == 3)
+
+    _press(show, Qt.Key.Key_Left)
+
+    _pump(app, lambda: show._shown == 2 and show._veil == 0.0)
+    assert show.paused
+    assert not show.ended
+    show.close()
+
+
+def test_stepping_by_hand_past_the_end_plays_on(app: QApplication, state) -> None:
+    show = _show(app, state, stop_after_one_round=True)
+    for target in (1, 2, 3, 0):
+        _press(show, Qt.Key.Key_Right)
+        _pump(app, lambda target=target: show._shown == target)
+
+    assert not show.ended
+    show.close()
+
+
+def test_a_one_round_show_ends_even_when_its_last_photo_is_unreadable(
+    app: QApplication, state
+) -> None:
+    state.entries[3].absolute_path.write_bytes(b"broken")
+    show = _show(app, state, stop_after_one_round=True)
+    show._advance()
+    _pump(app, lambda: show._shown == 1)
+    show._advance()
+    _pump(app, lambda: show._shown == 2)
+
+    show._advance()
+    _pump(app, lambda: show.ended)
+
+    assert show._shown == 2
+    assert show.blacked_out
+    show.close()
+
+
+def test_the_show_starts_at_the_given_photo(app: QApplication, state) -> None:
+    show = SlideshowWindow(
+        state.entries, SlideshowSettings(seconds=60, transitions=frozenset()), start_index=2
+    )
+    show.setGeometry(QRect(0, 0, 320, 200))
+    show.show()
+
+    _pump(app, lambda: show._shown == 2)
+    show.close()
+
+
+def test_mouse_clicks_step(app: QApplication, state) -> None:
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    show = _show(app, state)
+
+    def click(button: Qt.MouseButton) -> None:
+        show.mousePressEvent(
+            QMouseEvent(
+                QMouseEvent.Type.MouseButtonPress,
+                QPointF(10, 10),
+                QPointF(10, 10),
+                button,
+                button,
+                Qt.KeyboardModifier.NoModifier,
+            )
+        )
+
+    click(Qt.MouseButton.LeftButton)
+    _pump(app, lambda: show._shown == 1)
+    click(Qt.MouseButton.RightButton)
+    _pump(app, lambda: show._shown == 0)
+    show.close()
+
+
+def test_the_dialog_keeps_the_new_options(app: QApplication) -> None:
+    chosen = SlideshowSettings(stop_after_one_round=True, start_at_current=True, screen="HDMI-1")
+    dialog = SlideshowDialog(
+        chosen, selected_count=0, screens=(("eDP-1", "Laptop"), ("HDMI-1", "Beamer"))
+    )
+
+    assert dialog.settings == chosen
+    assert dialog._screen.isVisibleTo(dialog)
+    assert dialog._screen.currentText() == "Beamer"
+
+    dialog._random.setChecked(True)
+    assert not dialog._start_at_current.isEnabled()
+    dialog.close()
+
+
+def test_the_screen_choice_hides_with_one_screen_but_keeps_a_stored_one(
+    app: QApplication,
+) -> None:
+    dialog = SlideshowDialog(
+        SlideshowSettings(screen="HDMI-1"), selected_count=0, screens=(("eDP-1", "Laptop"),)
+    )
+
+    assert not dialog._screen.isVisibleTo(dialog)
+    assert dialog.settings.screen == "HDMI-1", "a beamer that is unplugged now stays chosen"
+    dialog.close()
+
+
+def test_start_at_current_begins_at_the_cursor(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    window.go_to(2)
+
+    window._on_slideshow_prepared(
+        state.project.id,
+        state.entries,
+        SlideshowSettings(seconds=60, transitions=frozenset(), start_at_current=True),
+    )
+
+    show = window._slideshow
+    _pump(app, lambda: show._shown == 2)
+    show.close()
+    _pump(app, lambda: window._slideshow is None)
+    window.close()
+
+
+def test_a_missing_screen_falls_back_to_the_one_fotozeef_is_on(
+    app: QApplication, tmp_path: Path, library: Library, state
+) -> None:
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+
+    assert window._slideshow_screen(SlideshowSettings(screen="nope")) is window.screen()
+    window.close()

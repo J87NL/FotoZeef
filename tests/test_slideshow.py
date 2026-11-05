@@ -37,9 +37,32 @@ def test_settings_survive_a_json_round_trip() -> None:
         order=SlideOrder.RANDOM,
         transitions=frozenset({Transition.SLIDE_TOP, Transition.FADE}),
         pause_mode=PauseMode.BLACK,
+        stop_after_one_round=True,
+        start_at_current=True,
+        screen="HDMI-1",
     )
 
     assert SlideshowSettings.from_json(settings.to_json()) == settings
+
+
+def test_new_options_fall_back_one_by_one() -> None:
+    payload = '{"stop_after_one_round": "yes", "start_at_current": 1, "screen": 5}'
+
+    settings = SlideshowSettings.from_json(payload)
+
+    assert settings.stop_after_one_round is False
+    assert settings.start_at_current is False
+    assert settings.screen == ""
+
+
+def test_settings_stored_before_these_options_still_load() -> None:
+    old = '{"scope": "all", "seconds": 7, "order": "random", "transitions": ["fade"]}'
+
+    settings = SlideshowSettings.from_json(old)
+
+    assert settings.seconds == 7
+    assert settings.stop_after_one_round is False
+    assert settings.screen == ""
 
 
 def test_no_transitions_is_a_valid_choice_and_is_kept() -> None:
@@ -416,3 +439,58 @@ def test_the_round_counter_follows_the_show() -> None:
     sequencer.next()
 
     assert sequencer.round == 1
+
+
+# --- start and end ----------------------------------------------------------------------
+
+
+def test_a_chronological_show_can_start_midway() -> None:
+    sequencer = Sequencer(5, SlideOrder.CHRONOLOGICAL, start=3)
+
+    shown = [sequencer.current] + [sequencer.next() for _ in range(4)]
+
+    assert shown == [3, 4, 0, 1, 2]
+    assert sequencer.round == 1
+
+
+def test_a_start_out_of_range_is_clamped() -> None:
+    assert Sequencer(3, SlideOrder.CHRONOLOGICAL, start=9).current == 2
+    assert Sequencer(3, SlideOrder.CHRONOLOGICAL, start=-4).current == 0
+
+
+def test_random_ignores_the_start() -> None:
+    sequencer = Sequencer(4, SlideOrder.RANDOM, random.Random(2), start=3)
+    shown = [sequencer.current] + [sequencer.next() for _ in range(3)]
+
+    assert sorted(shown) == [0, 1, 2, 3]
+
+
+def test_round_end_is_the_last_step() -> None:
+    sequencer = Sequencer(3, SlideOrder.CHRONOLOGICAL, start=1)
+    assert not sequencer.at_round_end
+
+    sequencer.next()
+    assert sequencer.at_round_end
+
+    sequencer.next()
+    assert not sequencer.at_round_end
+
+
+def test_the_start_is_the_current_photo_or_the_next_in_time(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    from fotozeef.core.slideshow import start_position
+
+    source = tmp_path / "cam"
+    for index in range(5):
+        jpeg_factory(source / f"{index}.jpg", captured_at=datetime(2024, 1, 1, 9, index))
+    state = _project(library, [source], tmp_path / "out", recursive=True)
+    entries = state.entries
+    chosen = (entries[0], entries[3])
+
+    assert start_position(entries, entries[2]) == 2
+    assert start_position(chosen, entries[3]) == 1
+    assert start_position(chosen, entries[1]) == 1, "the next selected photo in time"
+    assert start_position(chosen, entries[4]) == 0, "nothing later: from the start"
+    assert start_position(chosen, None) == 0
+    assert start_position((), entries[1]) == 0

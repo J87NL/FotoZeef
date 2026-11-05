@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QGuiApplication,
     QImage,
     QKeyEvent,
+    QMouseEvent,
     QPainter,
     QPaintEvent,
     QPixmap,
@@ -145,6 +146,7 @@ class SlideshowWindow(QWidget):
         screen: QScreen | None = None,
         rng: random.Random | None = None,
         sleep_guard: SleepGuard | None = None,
+        start_index: int = 0,
     ) -> None:
         super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self._sleep_guard = sleep_guard if sleep_guard is not None else SleepGuard()
@@ -156,7 +158,10 @@ class SlideshowWindow(QWidget):
         self._entries = entries
         self._settings = settings
         self._rng = rng or random.Random()
-        self._sequencer = Sequencer(len(entries), settings.order, self._rng)
+        self._sequencer = Sequencer(len(entries), settings.order, self._rng, start=start_index)
+        self._ended = False
+        self._automatic = False
+        self._reached_end = False
         self._slides: dict[int, tuple[QPixmap, QPixmap]] = {}
         self._unreadable: set[int] = set()
         self._unreadable_round = 0
@@ -188,7 +193,7 @@ class SlideshowWindow(QWidget):
 
         self._dwell = QTimer(self)
         self._dwell.setSingleShot(True)
-        self._dwell.timeout.connect(self.next)
+        self._dwell.timeout.connect(self._advance)
 
         self._animation = QVariantAnimation(self)
         self._animation.setStartValue(0.0)
@@ -232,7 +237,9 @@ class SlideshowWindow(QWidget):
         self._go(self._sequencer.previous(), direction=-1)
 
     def toggle_pause(self) -> None:
-        if self._paused:
+        if self._ended:
+            self._restart()
+        elif self._paused:
             self._resume()
         else:
             self._pause(black=self._settings.pause_mode is PauseMode.BLACK)
@@ -244,6 +251,7 @@ class SlideshowWindow(QWidget):
         was already there before the screen went black.
         """
         if self._paused and self._veil_target() > 0:
+            self._ended = False
             if self._black_resumes:
                 self._resume()
             else:
@@ -275,13 +283,41 @@ class SlideshowWindow(QWidget):
         elif key in (Qt.Key.Key_B, Qt.Key.Key_Period):
             self.toggle_black()
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown):
-            self._step(self.next)
+            self.forward()
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp):
-            self._step(self.previous)
+            self.back()
         else:
             super().keyPressEvent(event)
             return
         event.accept()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """A click steps too, for a laptop beside the projector without a remote."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.forward()
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.back()
+        else:
+            super().mousePressEvent(event)
+            return
+        event.accept()
+
+    @property
+    def ended(self) -> bool:
+        """A show that stops after one round has played its last photo."""
+        return self._ended
+
+    def forward(self) -> None:
+        self._automatic = False
+        if self._ended:
+            self._restart()
+        else:
+            self._step(self.next)
+
+    def back(self) -> None:
+        self._automatic = False
+        self._ended = False
+        self._step(self.previous)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._dwell.stop()
@@ -307,6 +343,33 @@ class SlideshowWindow(QWidget):
             painter.fillRect(self.rect(), QColor(0, 0, 0, round(255 * self._veil)))
         painter.end()
 
+    def _advance(self) -> None:
+        """The timer's step. Unlike a step by hand, it may end a one-round show,
+        also when the last photos of the round turn out to be unreadable."""
+        self._automatic = True
+        if self._stops_here():
+            self._end()
+            return
+        self.next()
+
+    def _stops_here(self) -> bool:
+        return (
+            self._automatic and self._settings.stop_after_one_round and self._sequencer.at_round_end
+        )
+
+    def _end(self) -> None:
+        """Fades to black after the last photo and stays there."""
+        self._pause(black=True)
+        self._ended = True
+
+    def _restart(self) -> None:
+        """From the end, plays again from the start of the next round."""
+        self._ended = False
+        self._automatic = False
+        self._remaining_ms = None
+        self._resume()
+        self.next()
+
     def _step(self, move: Callable[[], None]) -> None:
         """Manual steps keep a pause; a black pause turns into a held one."""
         if self._paused and self._veil_target() > 0:
@@ -316,9 +379,12 @@ class SlideshowWindow(QWidget):
         move()
 
     def _go(self, index: int, direction: int) -> None:
+        self._reached_end = False
         readable, self._direction = self._first_readable(index, direction)
         self._pending = readable
-        if readable is None:
+        if self._reached_end:
+            self._end()
+        elif readable is None:
             self._dwell.stop()
             self.update()
         elif readable in self._slides:
@@ -348,6 +414,9 @@ class SlideshowWindow(QWidget):
                     index = earlier
                     continue
                 direction = 1
+            if self._stops_here():
+                self._reached_end = True
+                return None, direction
             index = self._sequencer.next()
         return None, direction
 

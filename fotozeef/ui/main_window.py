@@ -8,10 +8,12 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QCloseEvent,
+    QGuiApplication,
     QImage,
     QKeyEvent,
     QKeySequence,
     QPixmap,
+    QScreen,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,7 +30,7 @@ from PySide6.QtWidgets import (
 from fotozeef.appinfo import APP_NAME
 from fotozeef.core.library import Library, ProjectState
 from fotozeef.core.models import TimelineEntry
-from fotozeef.core.slideshow import PhotoScope, SlideshowSettings
+from fotozeef.core.slideshow import PhotoScope, SlideOrder, SlideshowSettings, start_position
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
@@ -290,7 +292,12 @@ class MainWindow(QMainWindow):
             return
         project_id = state.project.id
         dialog = SlideshowDialog(
-            self._library.slideshow_settings(project_id), len(self._selected), self
+            self._library.slideshow_settings(project_id),
+            len(self._selected),
+            self,
+            screens=tuple(
+                (screen.name(), _screen_label(screen)) for screen in QGuiApplication.screens()
+            ),
         )
         dialog.exec()
         settings = dialog.settings
@@ -334,11 +341,23 @@ class MainWindow(QMainWindow):
                 else self.tr("There are no photos to show."),
             )
             return
-        show = SlideshowWindow(entries, settings, self.screen())
+        start = 0
+        if settings.start_at_current and settings.order is SlideOrder.CHRONOLOGICAL:
+            start = start_position(entries, self._state.current)
+        show = SlideshowWindow(
+            entries, settings, self._slideshow_screen(settings), start_index=start
+        )
         show.closed.connect(self._on_slideshow_closed)
         self._slideshow = show
         self._update_actions()
         show.start()
+
+    def _slideshow_screen(self, settings: SlideshowSettings) -> QScreen | None:
+        """The chosen screen when it is connected, otherwise the one FotoZeef is on."""
+        for screen in QGuiApplication.screens():
+            if settings.screen and screen.name() == settings.screen:
+                return screen
+        return self.screen()
 
     def _on_slideshow_failed(self, message: str) -> None:
         if self._preparer.cancelled:
@@ -765,6 +784,13 @@ def _short_path(path: Path) -> str:
         return str(path.relative_to(Path.home()).as_posix())
     except ValueError:
         return str(path)
+
+
+def _screen_label(screen: QScreen) -> str:
+    size = screen.size()
+    model = " ".join(part for part in (screen.manufacturer(), screen.model()) if part).strip()
+    name = f"{model} — {screen.name()}" if model else screen.name()
+    return f"{name} ({size.width()} x {size.height()})"
 
 
 def screen_scale(app: QApplication) -> float:

@@ -46,20 +46,26 @@ space to keep.
 
 ## Slideshow
 
-*View ▸ Slideshow…* (`F5`) plays the open project fullscreen, on the screen
-FotoZeef is on. Each photo is as large as the screen allows without cropping;
-the space beside it is filled with a blurred, dimmed copy of the same photo.
-For a projector, duplicate your screen and start the show there.
+*View ▸ Slideshow…* (`F5`) plays the open project fullscreen. Each photo is as
+large as the screen allows without cropping; the space beside it is filled with
+a blurred, dimmed copy of the same photo. For a projector, duplicate your screen,
+or extend it and pick the projector under *Screen*.
 
 You choose:
 
 - **Photos** — all photos, with or without subfolders, or only the selected ones.
 - **Each photo** — how many seconds a photo stays on screen.
 - **Order** — chronological (by capture time, camera offsets included) or random.
-  Random plays every photo once before reshuffling.
+  Random plays every photo once before reshuffling. Chronological can start at
+  the photo you are on in FotoZeef, or the next one in the show after it.
+- **Stop after one round** — fade to black after the last photo instead of
+  starting over. `Space` or `→` then plays it again, `←` goes back.
 - **Transitions** — fade, or slide in from the left, right, top or bottom. Tick
   several and they take turns at random; tick none for a plain cut.
 - **When paused** — keep the photo on screen, or go to black.
+- **Screen** — only shown with more than one screen: the screen FotoZeef is
+  on, or a specific one. A chosen screen that is not connected falls back to
+  the screen FotoZeef is on.
 
 The settings are stored with the project, also when you only close the window,
 so a show can be set up in advance. The selection folder is never played, so
@@ -82,8 +88,8 @@ Where none of that is available the show plays on regardless.
 |---|---|
 | `Space` | Pause / resume |
 | `B` / `.` | Black screen / back to the show |
-| `→` / `PgDn` | Next photo |
-| `←` / `PgUp` | Previous photo |
+| `→` / `PgDn` / left click | Next photo |
+| `←` / `PgUp` / right click | Previous photo |
 | `Esc` | Stop |
 
 `PgUp`, `PgDn` and `B` (or `.`) are what most presentation remotes send, so a

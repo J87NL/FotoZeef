@@ -50,6 +50,10 @@ class SlideshowSettings:
     order: SlideOrder = SlideOrder.CHRONOLOGICAL
     transitions: frozenset[Transition] = field(default_factory=lambda: frozenset({Transition.FADE}))
     pause_mode: PauseMode = PauseMode.HOLD
+    stop_after_one_round: bool = False
+    start_at_current: bool = False
+    screen: str = ""
+    """A screen's name, or empty for the screen FotoZeef is on."""
 
     def to_json(self) -> str:
         return json.dumps(
@@ -60,6 +64,9 @@ class SlideshowSettings:
                 "order": str(self.order),
                 "transitions": sorted(str(item) for item in self.transitions),
                 "pause_mode": str(self.pause_mode),
+                "stop_after_one_round": self.stop_after_one_round,
+                "start_at_current": self.start_at_current,
+                "screen": self.screen,
             },
             sort_keys=True,
         )
@@ -80,16 +87,17 @@ class SlideshowSettings:
             transitions = frozenset(
                 Transition(item) for item in raw_transitions if item in _values(Transition)
             )
-        include_subfolders = data.get("include_subfolders")
+        screen = data.get("screen")
         return cls(
             scope=_enum(PhotoScope, data.get("scope"), defaults.scope),
-            include_subfolders=include_subfolders
-            if isinstance(include_subfolders, bool)
-            else defaults.include_subfolders,
+            include_subfolders=_flag(data, "include_subfolders", defaults.include_subfolders),
             seconds=clamp_seconds(data.get("seconds"), defaults.seconds),
             order=_enum(SlideOrder, data.get("order"), defaults.order),
             transitions=transitions,
             pause_mode=_enum(PauseMode, data.get("pause_mode"), defaults.pause_mode),
+            stop_after_one_round=_flag(data, "stop_after_one_round", defaults.stop_after_one_round),
+            start_at_current=_flag(data, "start_at_current", defaults.start_at_current),
+            screen=screen if isinstance(screen, str) else defaults.screen,
         )
 
 
@@ -193,7 +201,9 @@ class Sequencer:
         count: int,
         order: SlideOrder,
         rng: random.Random | None = None,
+        start: int = 0,
     ) -> None:
+        """`start` is where a chronological show begins; its first round runs from there."""
         if count <= 0:
             raise ValueError("A slideshow needs at least one photo")
         self._count = count
@@ -201,7 +211,12 @@ class Sequencer:
         self._rng = rng or random.Random()
         self._rounds: list[list[int]] = [self._new_round(previous=None)]
         self._round = 0
-        self._step = 0
+        self._step = min(max(start, 0), count - 1) if order is SlideOrder.CHRONOLOGICAL else 0
+
+    @property
+    def at_round_end(self) -> bool:
+        """Whether `next()` would start a new round."""
+        return self._step == self._count - 1
 
     @property
     def round(self) -> int:
@@ -248,6 +263,20 @@ class Sequencer:
         return indices
 
 
+def start_position(slides: Sequence[TimelineEntry], current: TimelineEntry | None) -> int:
+    """Where a show starting at `current` begins: that photo, or the next one in time."""
+    if current is None or not slides:
+        return 0
+    key = ordering.timeline_key(current)
+    for index, entry in enumerate(slides):
+        if entry.photo.id == current.photo.id and entry.source.id == current.source.id:
+            return index
+    for index, entry in enumerate(slides):
+        if ordering.timeline_key(entry) >= key:
+            return index
+    return 0
+
+
 def choose_transition(
     enabled: Iterable[Transition],
     rng: random.Random | None = None,
@@ -263,6 +292,11 @@ def _enum[E: StrEnum](kind: type[E], value: object, fallback: E) -> E:
     if isinstance(value, str) and value in _values(kind):
         return kind(value)
     return fallback
+
+
+def _flag(data: dict[str, object], name: str, fallback: bool) -> bool:
+    value = data.get(name)
+    return value if isinstance(value, bool) else fallback
 
 
 def _values(kind: type[StrEnum]) -> frozenset[str]:
