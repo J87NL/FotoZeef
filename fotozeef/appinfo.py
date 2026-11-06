@@ -8,7 +8,7 @@ APP_NAME = "FotoZeef"
 APP_AUTHOR = "Johan Montenij"
 SETTINGS_ORGANIZATION = "FotoZeef"
 APP_BUNDLE_ID = "nl.j87.FotoZeef"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 
 DATABASE_FILENAME = "fotozeef.sqlite"
 

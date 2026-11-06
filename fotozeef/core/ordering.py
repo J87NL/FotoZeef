@@ -58,5 +58,10 @@ def calibration_offset(
     return round((shifted_reference - target_raw).total_seconds())
 
 
+def timeline_key(entry: TimelineEntry) -> tuple[datetime, int, str]:
+    """Where an entry sits in the timeline; equal keys mean the same place."""
+    return _sort_key(entry)
+
+
 def _sort_key(entry: TimelineEntry) -> tuple[datetime, int, str]:
     return (entry.effective_at, entry.source.sort_order, entry.photo.relative_path)

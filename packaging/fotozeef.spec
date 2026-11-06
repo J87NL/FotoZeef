@@ -25,21 +25,25 @@ excludes = [
     "tkinter",
 ]
 
+# QtDBus keeps the screensaver away during a slideshow on Linux. It is imported
+# lazily, so it is named here; Windows and macOS do not need it.
+linux_only = ["PySide6.QtDBus"] if sys.platform.startswith("linux") else []
+
 analysis = Analysis(
     [str(ROOT / "fotozeef" / "app.py")],
     pathex=[str(ROOT)],
     binaries=binaries,
     datas=[(str(ROOT / "fotozeef" / "resources"), "fotozeef/resources")],
-    hiddenimports=["pillow_heif", "rawpy", "exifread"],
+    hiddenimports=["pillow_heif", "rawpy", "exifread", *linux_only],
     hookspath=[],
     runtime_hooks=[],
     excludes=excludes,
     noarchive=False,
 )
 
-# FotoZeef uses only QtCore, QtGui and QtWidgets. PySide6's hooks pull in the
-# rest of Qt anyway, so the unused halves are dropped here. Every pattern below
-# was removed and then verified with `FotoZeef --selftest`.
+# FotoZeef uses QtCore, QtGui and QtWidgets, plus QtDBus on Linux. PySide6's
+# hooks pull in the rest of Qt anyway, so the unused halves are dropped here.
+# Every pattern below was removed and then verified with `FotoZeef --selftest`.
 UNUSED = (
     "Qt6Quick",
     "Qt6Qml",
@@ -130,7 +134,7 @@ if sys.platform == "darwin":
             "CFBundleDisplayName": APP_NAME,
             "CFBundleShortVersionString": APP_VERSION,
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "12.0",
+            "LSMinimumSystemVersion": "13.0",  # PySide6 6.11 wheels need macOS 13
             "NSDesktopFolderUsageDescription": "FotoZeef reads the photo folders you choose.",
             "NSDocumentsFolderUsageDescription": "FotoZeef reads the photo folders you choose.",
             "NSRemovableVolumesUsageDescription": "FotoZeef reads photos from memory cards.",

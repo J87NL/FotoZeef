@@ -28,13 +28,24 @@ uv run fotozeef --selftest   # boots the whole stack offscreen
 ```
 
 `--selftest` is what CI runs against each packaged build: it reports whether
-HEIF and RAW decoding are live in that bundle and opens a window offscreen.
+HEIF and RAW decoding are live in that bundle, which way that platform keeps the
+screen awake during a slideshow (`sleepguard=`), and opens a window offscreen.
+
+Keeping the screen awake is platform code in `fotozeef/ui/sleep_guard.py`:
+`SetThreadExecutionState` on Windows (which keeps the display on but does not
+stop the screensaver, so `SlideshowWindow.nativeEvent` also turns down
+`SC_SCREENSAVE` and `SC_MONITORPOWER`), `caffeinate -w <pid>` on macOS, and the
+freedesktop `org.freedesktop.ScreenSaver.Inhibit` call on Linux, on a D-Bus
+connection of its own that is closed to end it, with a one-second timeout so a
+hung screensaver cannot hold up a show. The test suite replaces all
+three with fakes; `tests/test_sleep_guard.py` also runs the Linux path against a
+fake screensaver on a private bus when `dbus-run-session` is installed.
 
 ## Layout
 
 ```
 fotozeef/
-  core/      pure Python, no Qt imports — scanning, metadata, ordering, selection, thumbnails
+  core/      pure Python, no Qt imports — scanning, metadata, ordering, selection, thumbnails, slideshow
   ui/        PySide6 widgets
   app.py     entry point
 ```
@@ -82,10 +93,11 @@ folder.
 ## Packaging
 
 PyInstaller does not cross-compile: each build must be made on its own
-operating system. CI does all three on a `v*` tag; locally you build the one
-you are sitting in front of. The version in the file names comes from
-`pyproject.toml`; the Windows installer still carries its own copy in
-`packaging/windows/installer.iss`.
+operating system. GitHub Actions does all three (see [Releasing](#releasing));
+locally you build the one you are sitting in front of. The version lives in
+`pyproject.toml`, `fotozeef/appinfo.py`, `packaging/windows/installer.iss`,
+`packaging/windows/fotozeef.manifest` and `uv.lock`; `tests/test_version.py`
+fails when they disagree.
 
 ### Linux — AppImage
 
@@ -128,21 +140,39 @@ uv sync
 bash packaging/macos/build_app.sh
 ```
 
-Unsigned, so the first launch needs right-click ▸ Open. Set
+Unsigned, so the first launch needs *Open Anyway* under *System Settings ▸
+Privacy & Security* (right-click ▸ Open on macOS 14 and older). Set
 `MACOS_SIGN_IDENTITY` and `MACOS_NOTARY_PROFILE` to sign and notarise; those
-paths are wired but untested, since there is no certificate yet.
+paths are wired but untested, since there is no certificate yet. The release
+build comes from GitHub's `macos-latest` runner, which is Apple silicon, so the
+download is for M1 and later, on macOS 13 or newer (what PySide6 6.11 needs).
 
-**Help wanted.** I have no Mac, so releases ship without a macOS build. CI does
-produce a zip, but nobody has run it on real hardware. If you build it, try it
-on your photos and share the result, it can go into the next release.
+## Releasing
 
-### Via CI
+GitHub Actions builds the releases; no Mac or Windows machine is needed. For a
+public repository the hosted runners cost nothing, macOS included.
 
-Pushing a tag builds all three and uploads them as workflow artifacts:
+1. Raise the version in `pyproject.toml`, `fotozeef/appinfo.py`,
+   `packaging/windows/installer.iss` and `packaging/windows/fotozeef.manifest`
+   (as `X.Y.Z.0`), run `uv lock`, and merge that to `main`.
+2. Tag the merge on `main` and push the tag:
 
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+   ```bash
+   git checkout main && git pull
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The *Build* workflow then checks that the tag matches the version, runs the full
+test suite on Linux, macOS and Windows, builds and boots the AppImage, the macOS
+app and the Windows installer, and publishes them as a GitHub Release with notes
+generated from the merged pull requests. If the tag does not match
+`pyproject.toml` it stops before building; if a test fails nothing is
+published. A failed upload can be fixed with *Re-run failed jobs*.
+
+To try a branch without releasing, run the workflow by hand: *Actions ▸ Build ▸
+Run workflow*, pick the branch. The three builds then appear under that run's
+*Artifacts*. A run started by hand never publishes, also not on a tag.
 
 [uv]: https://docs.astral.sh/uv/
 [Inno Setup]: https://jrsoftware.org/isinfo.php

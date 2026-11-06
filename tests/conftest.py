@@ -65,3 +65,11 @@ def make_jpeg(
 @pytest.fixture
 def jpeg_factory():
     return make_jpeg
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep_guard(monkeypatch):
+    """A show must not start caffeinate or call D-Bus from the test run."""
+    from fotozeef.ui import sleep_guard
+
+    monkeypatch.setattr(sleep_guard, "default_backend", lambda platform=None: None)

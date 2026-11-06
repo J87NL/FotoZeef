@@ -17,6 +17,10 @@ PREVIEW_SIZE = 2048
 JPEG_QUALITY = 85
 MAX_FULL_PIXELS = 60_000_000
 MAX_FULL_EDGE = 8192
+BACKDROP_WIDTH = 192
+BACKDROP_BLUR = 8
+BACKDROP_SATURATION = 0.85
+BACKDROP_BRIGHTNESS = 0.45
 
 
 class ThumbnailSize(IntEnum):
@@ -106,6 +110,52 @@ def render_full(path: Path) -> tuple[bytes, int, int]:
         if image.width * image.height > MAX_FULL_PIXELS:
             image.thumbnail((MAX_FULL_EDGE, MAX_FULL_EDGE), Image.Resampling.LANCZOS)
         return image.tobytes(), image.width, image.height
+
+
+@dataclass(frozen=True, slots=True)
+class SlideImage:
+    """A photo fitted to a screen, plus the blurred, dimmed backdrop behind it (RGB888)."""
+
+    photo: bytes
+    width: int
+    height: int
+    backdrop: bytes
+    backdrop_width: int
+    backdrop_height: int
+
+
+def render_slide(path: Path, screen_width: int, screen_height: int) -> SlideImage:
+    """Never upscales the photo itself: the painter scales it to fill the screen."""
+    register_codecs()
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+    if screen_width <= 0 or screen_height <= 0:
+        raise ValueError("The screen has no size")
+    if path.suffix.lower() in RAW_EXTENSIONS:
+        source = _open_raw_preview(path)
+    else:
+        source = Image.open(path)
+        if source.format == "JPEG":
+            source.draft("RGB", (screen_width, screen_height))
+    with source:
+        image = ImageOps.exif_transpose(source) or source
+        image = image.convert("RGB")
+        image.thumbnail((screen_width, screen_height), Image.Resampling.LANCZOS)
+
+    scale = BACKDROP_WIDTH / screen_width
+    backdrop_size = (BACKDROP_WIDTH, max(1, round(screen_height * scale)))
+    backdrop = ImageOps.fit(image, backdrop_size, Image.Resampling.BILINEAR)
+    backdrop = backdrop.filter(ImageFilter.GaussianBlur(BACKDROP_BLUR))
+    backdrop = ImageEnhance.Color(backdrop).enhance(BACKDROP_SATURATION)
+    backdrop = ImageEnhance.Brightness(backdrop).enhance(BACKDROP_BRIGHTNESS)
+    return SlideImage(
+        photo=image.tobytes(),
+        width=image.width,
+        height=image.height,
+        backdrop=backdrop.tobytes(),
+        backdrop_width=backdrop.width,
+        backdrop_height=backdrop.height,
+    )
 
 
 def _open_for_thumbnail(request: ThumbnailRequest):  # noqa: ANN202

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -8,10 +8,12 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QCloseEvent,
+    QGuiApplication,
     QImage,
     QKeyEvent,
     QKeySequence,
     QPixmap,
+    QScreen,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,6 +30,7 @@ from PySide6.QtWidgets import (
 from fotozeef.appinfo import APP_NAME
 from fotozeef.core.library import Library, ProjectState
 from fotozeef.core.models import TimelineEntry
+from fotozeef.core.slideshow import PhotoScope, SlideOrder, SlideshowSettings, start_position
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
@@ -36,8 +39,10 @@ from fotozeef.ui.offset_dialog import OffsetDialog
 from fotozeef.ui.open_dialog import OpenProjectDialog
 from fotozeef.ui.project_dialog import ProjectDialog
 from fotozeef.ui.settings_dialog import SettingsDialog
+from fotozeef.ui.slideshow_dialog import SlideshowDialog
+from fotozeef.ui.slideshow_window import SlideshowWindow
 from fotozeef.ui.start_screen import StartScreen
-from fotozeef.ui.tasks import ProjectOpener, SelectionQueue
+from fotozeef.ui.tasks import ProjectOpener, SelectionQueue, SlideshowPreparer
 from fotozeef.ui.thumbnail_service import ThumbnailService
 from fotozeef.ui.translations import available_languages, current_language, install, save_language
 from fotozeef.ui.viewer import Viewer
@@ -101,6 +106,12 @@ class MainWindow(QMainWindow):
         self._opener.failed.connect(self._on_project_failed)
         self._opener.progress.connect(self._on_scan_progress)
 
+        self._slideshow: SlideshowWindow | None = None
+        self._actions: list[QAction] = []
+        self._preparer = SlideshowPreparer(self)
+        self._preparer.prepared.connect(self._on_slideshow_prepared)
+        self._preparer.failed.connect(self._on_slideshow_failed)
+
         self._selection_queue = SelectionQueue(self)
         self._selection_queue.failed.connect(self._on_selection_failed)
 
@@ -138,6 +149,7 @@ class MainWindow(QMainWindow):
     def close_project(self) -> None:
         if self._state is None:
             return
+        self.stop_slideshow()
         self.leave_fullscreen()
         self._cursor_timer.stop()
         self._persist_cursor()
@@ -271,6 +283,96 @@ class MainWindow(QMainWindow):
         self.statusBar().setVisible(True)
         self._filmstrip.setVisible(True)
 
+    def start_slideshow(self) -> None:
+        state = self._state
+        if state is None or self._slideshow is not None:
+            return
+        if self._preparer.busy:
+            self.statusBar().showMessage(self.tr("Still stopping the previous preparation…"), 4000)
+            return
+        project_id = state.project.id
+        dialog = SlideshowDialog(
+            self._library.slideshow_settings(project_id),
+            len(self._selected),
+            self,
+            screens=tuple(
+                (screen_key(screen, QGuiApplication.screens()), _screen_label(screen))
+                for screen in QGuiApplication.screens()
+            ),
+        )
+        dialog.exec()
+        settings = dialog.settings
+        self._library.save_slideshow_settings(project_id, settings)
+        if not dialog.start_requested:
+            return
+        self.leave_fullscreen()
+        self._show_slideshow_progress()
+        self._preparer.start(state, set(self._selected), settings)
+
+    def stop_slideshow(self) -> None:
+        self._preparer.cancel()
+        self._close_progress()
+        if self._slideshow is not None:
+            self._slideshow.close()
+
+    def _show_slideshow_progress(self) -> None:
+        progress = QProgressDialog(
+            self.tr("Preparing the slideshow…"), self.tr("Cancel"), 0, 0, self
+        )
+        progress.setWindowTitle(APP_NAME)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.canceled.connect(self._preparer.cancel)
+        self._progress = progress
+
+    def _on_slideshow_prepared(
+        self, project_id: int, entries: tuple[TimelineEntry, ...], settings: SlideshowSettings
+    ) -> None:
+        if self._preparer.cancelled:
+            return
+        self._close_progress()
+        if self._state is None or self._state.project.id != project_id:
+            return
+        if not entries:
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                self.tr("No photos are selected yet.")
+                if settings.scope is PhotoScope.SELECTED
+                else self.tr("There are no photos to show."),
+            )
+            return
+        start = 0
+        if settings.start_at_current and settings.order is SlideOrder.CHRONOLOGICAL:
+            start = start_position(entries, self._state.current)
+        show = SlideshowWindow(
+            entries, settings, self._slideshow_screen(settings), start_index=start
+        )
+        show.closed.connect(self._on_slideshow_closed)
+        self._slideshow = show
+        self._update_actions()
+        show.start()
+
+    def _slideshow_screen(self, settings: SlideshowSettings) -> QScreen | None:
+        """The chosen screen when it is connected, otherwise the one FotoZeef is on."""
+        return find_screen(settings.screen, QGuiApplication.screens()) or self.screen()
+
+    def _on_slideshow_failed(self, message: str) -> None:
+        if self._preparer.cancelled:
+            return
+        self._close_progress()
+        QMessageBox.critical(
+            self, APP_NAME, self.tr("Could not start the slideshow:\n{0}").format(message)
+        )
+
+    def _on_slideshow_closed(self) -> None:
+        show = self._slideshow
+        self._slideshow = None
+        self._update_actions()
+        if show is not None:
+            show.deleteLater()
+        self.activateWindow()
+
     def toggle_selection(self) -> None:
         state = self._state
         if state is None or not state.entries:
@@ -311,6 +413,12 @@ class MainWindow(QMainWindow):
         self._set_cursor(index)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        if self._slideshow is not None:
+            # The show lost focus (a notification, a click on the other screen):
+            # its keys must not select photos here.
+            self._slideshow.activateWindow()
+            self._slideshow.keyPressEvent(event)
+            return
         key = event.key()
         if key == Qt.Key.Key_Right:
             self.move_cursor(1)
@@ -347,6 +455,8 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.stop_slideshow()
+        self._preparer.wait()
         self._cursor_timer.stop()
         self._persist_cursor()
         self._opener.cancel()
@@ -357,6 +467,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _build_menu(self) -> None:
+        self._actions = []
         keys = QKeySequence.StandardKey
         project_menu = self.menuBar().addMenu(self.tr("&Project"))
         self._add(project_menu, self.tr("&New project…"), keys.New, self.new_project)
@@ -373,6 +484,7 @@ class MainWindow(QMainWindow):
 
         view_menu = self.menuBar().addMenu(self.tr("&View"))
         self._add(view_menu, self.tr("&Fullscreen"), "F", self.toggle_fullscreen)
+        self._add(view_menu, self.tr("&Slideshow…"), "F5", self.start_slideshow)
         view_menu.addSeparator()
         self._add(view_menu, self.tr("Zoom &in"), keys.ZoomIn, self.zoom_in)
         self._add(view_menu, self.tr("Zoom &out"), keys.ZoomOut, self.zoom_out)
@@ -429,8 +541,15 @@ class MainWindow(QMainWindow):
         if shortcut is not None:
             action.setShortcut(shortcut)
         action.triggered.connect(handler)
+        action.setEnabled(self._slideshow is None)
         menu.addAction(action)
+        self._actions.append(action)
         return action
+
+    def _update_actions(self) -> None:
+        """Menu shortcuts stay off during a show: F or Ctrl+O must not act behind it."""
+        for action in self._actions:
+            action.setEnabled(self._slideshow is None)
 
     def _start_open(self, project_id: int) -> None:
         if self._opener.busy:
@@ -663,6 +782,38 @@ def _short_path(path: Path) -> str:
         return str(path.relative_to(Path.home()).as_posix())
     except ValueError:
         return str(path)
+
+
+def _screen_label(screen: QScreen) -> str:
+    size = screen.size()
+    model = " ".join(part for part in (screen.manufacturer(), screen.model()) if part).strip()
+    name = screen.name()
+    if model and model != name:
+        name = f"{model} — {name}"
+    return f"{name} ({size.width()} x {size.height()})"
+
+
+def screen_key(screen: QScreen, screens: Sequence[QScreen]) -> str:
+    """The screen's name; with two of the same name (macOS uses the model) also its place."""
+    name = screen.name()
+    if sum(1 for other in screens if other.name() == name) < 2:
+        return name
+    corner = screen.geometry().topLeft()
+    return f"{name}@{corner.x()},{corner.y()}"
+
+
+def find_screen(key: str, screens: Sequence[QScreen]) -> QScreen | None:
+    """The screen a stored key names: exactly, else the first with that name."""
+    if not key:
+        return None
+    for screen in screens:
+        if screen_key(screen, screens) == key:
+            return screen
+    name = key.rsplit("@", 1)[0] if "@" in key else key
+    for screen in screens:
+        if screen.name() == name:
+            return screen
+    return None
 
 
 def screen_scale(app: QApplication) -> float:
