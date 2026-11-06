@@ -159,8 +159,8 @@ public repository the hosted runners cost nothing, macOS included.
 
    ```bash
    git checkout main && git pull
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.3.0
+   git push origin v0.3.0
    ```
 
 The *Build* workflow then checks that the tag matches the version, runs the full
