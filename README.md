@@ -57,7 +57,7 @@ photos: the originals and the selection folder stay on disk.
 | `1` | Actual size |
 | `F` | Fullscreen |
 | `G` | Overview of all photos (Enter opens one, Esc returns) |
-| `Ctrl` + scroll, `Ctrl` `+` / `-` | Larger or smaller tiles in the overview |
+| `Ctrl/Cmd` + scroll, `Ctrl/Cmd` `+` / `-` | Larger or smaller tiles in the overview |
 | `Esc` | Unzoom, then leave fullscreen |
 | `F5` | Slideshow (see below) |
 | `Ctrl/Cmd + N` | New project |
@@ -135,14 +135,15 @@ while the screen is black brings the photo back; the show stays paused until
   the same model in one folder share an offset; add their folders separately to
   set them apart.
 - **Lost in a long shoot?** `G` shows every photo as a grid, with a filter for
-  just the selected ones. `Ctrl` with the mouse wheel, or `Ctrl` `+` / `-`,
-  makes the tiles larger or smaller; `0` brings them back to normal.
+  just the selected ones. `Ctrl/Cmd` with the mouse wheel, or `Ctrl/Cmd` `+` /
+  `-`, makes the tiles larger or smaller; `0` brings them back to normal.
 - **Photos on a USB disk?** Opening the project while the disk is not connected
   is safe: FotoZeef says which folders it cannot find, shows their photos as
-  missing and keeps your selection. Connect the disk and open the project again.
+  missing and keeps your selection. Selecting and unselecting wait until the
+  disk is back. Connect it and open the project again.
 - **What counts as selected** is what is in the selection folder. A file there
-  counts for a photo when its name and its size match, so copies you put in by
-  hand are picked up too.
+  counts for a photo when its name and its size match, so an unchanged copy you
+  put in by hand is picked up too; an edited or rotated one is not.
 - **Language** — English and Dutch, under *View ▸ Language*.
 - **Starting over** — FotoZeef keeps its database and thumbnails in
   `~/.local/share/FotoZeef/` and `~/.cache/FotoZeef/`. Delete those; your photos

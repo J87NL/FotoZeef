@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import shiboken6
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
@@ -760,10 +761,22 @@ class MainWindow(QMainWindow):
         if not parts:
             return
         parts.append(self.tr("Your selection so far is kept."))
+        self._close_notice()
         notice = QMessageBox(QMessageBox.Icon.Warning, APP_NAME, "\n\n".join(parts), parent=self)
         notice.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        notice.setModal(False)
+        notice.destroyed.connect(self._forget_notice)
         self._notice = notice
-        notice.open()
+        notice.show()
+
+    def _close_notice(self) -> None:
+        notice = self._notice
+        if notice is not None and shiboken6.isValid(notice):
+            notice.close()
+        self._notice = None
+
+    def _forget_notice(self, *_args: object) -> None:
+        self._notice = None
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()

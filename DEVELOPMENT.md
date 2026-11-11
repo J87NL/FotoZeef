@@ -245,7 +245,16 @@ it yourself triggers none of it.
    never reappears in the timeline.
 4. **Recursive scanning** — on by default, per-project setting.
 5. **`copy_raw_sidecar`** — on by default, per-project setting.
-6. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
+6. **What is selected, and disks that come and go** — `selection.reconcile`
+   reads the destination: a file there belongs to a photo when its name and
+   size match, so a leftover copy of a photo that left the project is never
+   handed to a different photo with the same name. When the disk a destination
+   or source lives on is not connected (`fs.volume_missing`: a drive letter
+   that is gone, or nothing mounted under `/media`, `/run/media`, `/mnt` or
+   `/Volumes` on the way), nothing is dropped, nothing is created on the empty
+   mount point, and selecting or unselecting is refused until it is back.
+   Folders leaving a project never delete anything from disk.
+7. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
    original was dropped in 0.4: the originals and their folders are read-only.
    The `write_xmp` column stays in the database, unused, so older databases open
    unchanged. Sidecars written by 0.3 or earlier (marked `fotozeef`) are left

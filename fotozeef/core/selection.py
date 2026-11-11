@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from fotozeef.core.fs import normalize_name, os_path
+from fotozeef.core.fs import normalize_name, os_path, volume_missing
 from fotozeef.core.models import ProjectSettings, Selection, TimelineEntry
 
 _LABEL_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -44,19 +44,19 @@ class DestinationWriter:
         return self._destination
 
     def ensure_destination(self) -> None:
-        """Creates the destination folder, but only inside a folder that is there.
+        """Creates the destination folder, unless the disk it belongs on is not connected.
 
-        With parents=True an unplugged USB disk would get its folder tree made on the
-        internal disk instead (on Linux and macOS its mount point is an ordinary path).
+        Creating it then would put it on the internal disk, in the empty folder where the
+        USB disk is normally mounted (Linux and macOS).
         """
-        if self._destination.is_dir():
-            return
-        if not self._destination.parent.is_dir():
+        self._check_disk(self._destination)
+        self._destination.mkdir(parents=True, exist_ok=True)
+
+    def _check_disk(self, path: Path) -> None:
+        if volume_missing(path):
             raise SelectionError(
-                f"{self._destination.parent} cannot be reached. If it is on an external disk,"
-                " connect it and try again."
+                f"The disk with {path} is not connected. Connect it and try again."
             )
-        self._destination.mkdir(exist_ok=True)
 
     def select(
         self,
@@ -91,7 +91,13 @@ class DestinationWriter:
         selection: Selection,
         reserved: Mapping[str, int] | None = None,
     ) -> None:
-        """Removes this photo's copy, and the RAW copied with it if it really is that RAW."""
+        """Removes this photo's copy, and the RAW copied with it if it really is that RAW.
+
+        Refused while the destination's or the original's disk is not connected: the copy
+        could not be removed, and it would come back as a stranger's file later.
+        """
+        self._check_disk(self._destination)
+        self._check_disk(entry.absolute_path)
         if not selection.written_by_app:
             raise SelectionError(
                 f"{selection.written_name} was not written by this app; remove it yourself"
@@ -117,7 +123,8 @@ class DestinationWriter:
         suffix = PurePosixPath(filename).suffix
         candidates.extend(f"{stem}_{index}{suffix}" for index in range(2, 100))
         for candidate in candidates:
-            if self._is_available(candidate, entry.photo.id, reserved):
+            free = self._is_available(candidate, entry.photo.id, reserved)
+            if free and self._room_for_companions(candidate, entry, reserved):
                 return candidate
         raise SelectionError(f"No free filename in destination for {filename}")
 
@@ -129,6 +136,21 @@ class DestinationWriter:
         if owner == photo_id:
             return True
         return not (self._destination / candidate).exists()
+
+    def _room_for_companions(
+        self, candidate: str, entry: TimelineEntry, reserved: Mapping[str, int]
+    ) -> bool:
+        """A name whose RAW would overwrite a file that is not this photo's is taken."""
+        if not self._settings.copy_raw_sidecar:
+            return True
+        stem = PurePosixPath(candidate).stem
+        for companion in entry.photo.companions:
+            name = f"{stem}{PurePosixPath(companion).suffix}"
+            if reserved.get(normalize_name(name)) == entry.photo.id:
+                continue
+            if (self._destination / name).exists():
+                return False
+        return True
 
 
 def reserved_names(selections: Iterable[Selection]) -> dict[str, int]:
@@ -152,7 +174,7 @@ def reconcile(
     entry_list = list(entries)
     selection_list = list(selections)
 
-    if not destination.is_dir() and not destination.parent.is_dir():
+    if volume_missing(destination):
         result.unreachable = True
         return result
 

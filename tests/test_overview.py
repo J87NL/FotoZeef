@@ -313,3 +313,33 @@ def test_large_tiles_ask_for_the_sharper_thumbnail(window: MainWindow) -> None:
     requested.clear()
     window._overview_pixmap(entry, QSize(400, 320))
     assert requested[0] == service.grid_target
+
+
+def test_a_touchpad_zooms_one_step_per_full_notch(window: MainWindow) -> None:
+    window.show_overview()
+    window._overview.set_zoom(2)
+
+    for _ in range(9):
+        _wheel(window._overview.grid, 12, Qt.KeyboardModifier.ControlModifier)
+    assert window._overview.zoom == 2
+
+    for _ in range(3):
+        _wheel(window._overview.grid, 12, Qt.KeyboardModifier.ControlModifier)
+    assert window._overview.zoom == 3
+
+
+def test_scaled_tiles_stay_within_their_memory_budget(window: MainWindow, monkeypatch) -> None:
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QPixmap
+
+    from fotozeef.ui import thumbnail_service
+
+    monkeypatch.setattr(thumbnail_service, "_SCALED_CACHE_BYTES", 2_000_000)
+    service = window._service
+    base = QPixmap(800, 600)
+    monkeypatch.setattr(service, "pixmap", lambda _entry, _target: base)
+
+    for entry in window._state.entries:
+        service.scaled_pixmap(entry, service.grid_target, QSize(420, 336))
+
+    assert 0 < service.scaled_bytes <= 2_000_000

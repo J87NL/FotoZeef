@@ -27,7 +27,9 @@ from fotozeef.ui.filmstrip import SELECTED_ROLE, FilmstripDelegate, FilmstripMod
 
 GRID_SPACING = 4
 TILE_WIDTHS = (100, 130, 160, 210, 270, 340, 420)
-"""Tile widths per zoom step; tiles are 4:3 landscape."""
+"""Tile widths per zoom step; tiles are 5:4 landscape."""
+WHEEL_STEP = 120
+"""One notch of a mouse wheel; touchpads send many smaller deltas that add up to it."""
 DEFAULT_ZOOM = 2
 
 PixmapProvider = Callable[[TimelineEntry, QSize], QPixmap | None]
@@ -86,6 +88,7 @@ class OverviewGrid(QListView):
         super().__init__(parent)
         self.setModel(model)
         self._provider = pixmap
+        self._wheel = 0
         self._delegate = FilmstripDelegate(
             self, tile_size(DEFAULT_ZOOM), self._pixmap if pixmap else None
         )
@@ -109,8 +112,9 @@ class OverviewGrid(QListView):
         self._delegate.set_size(size)
         self.scheduleDelayedItemsLayout()
         self.viewport().update()
-        # The new layout is only there once the event loop has run.
-        QTimer.singleShot(0, self._center_current)
+        # The new layout is only there once the event loop has run; the context object
+        # cancels the call if the grid is gone by then.
+        QTimer.singleShot(0, self, self._center_current)
 
     def _center_current(self) -> None:
         if self.currentIndex().isValid():
@@ -118,9 +122,11 @@ class OverviewGrid(QListView):
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            delta = event.angleDelta().y()
-            if delta:
-                self.zoom_requested.emit(1 if delta > 0 else -1)
+            self._wheel += event.angleDelta().y()
+            while abs(self._wheel) >= WHEEL_STEP:
+                step = 1 if self._wheel > 0 else -1
+                self._wheel -= step * WHEEL_STEP
+                self.zoom_requested.emit(step)
             event.accept()
             return
         super().wheelEvent(event)
@@ -189,6 +195,7 @@ class OverviewPage(QWidget):
         self.grid = OverviewGrid(self._proxy, self, pixmap)
         self.grid.zoom_requested.connect(self.zoom_by)
         self._zoom = DEFAULT_ZOOM
+        self._laid_out = False
         self.set_zoom(zoom)
 
         self._summary = QLabel(self)
@@ -219,7 +226,11 @@ class OverviewPage(QWidget):
         return self._zoom
 
     def set_zoom(self, zoom: int) -> None:
-        self._zoom = min(max(zoom, 0), len(TILE_WIDTHS) - 1)
+        zoom = min(max(zoom, 0), len(TILE_WIDTHS) - 1)
+        if zoom == self._zoom and self._laid_out:
+            return
+        self._zoom = zoom
+        self._laid_out = True
         self.grid.set_tile_size(tile_size(self._zoom))
         self.zoom_changed.emit(self._zoom)
 

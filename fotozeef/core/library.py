@@ -17,6 +17,7 @@ from fotozeef.core.db import (
     SlideshowRepository,
     SourceRepository,
 )
+from fotozeef.core.fs import volume_missing
 from fotozeef.core.metadata import read_metadata
 from fotozeef.core.models import (
     Photo,
@@ -148,7 +149,7 @@ class Library:
             summary.missing += source_summary.missing
             summary.skipped_videos += source_summary.skipped_videos
             summary.cancelled = summary.cancelled or source_summary.cancelled
-            if not source.path.is_dir():
+            if not source.path.is_dir() or volume_missing(source.path):
                 summary.unreachable.append(source.path)
 
         state = self.load_state(project_id)

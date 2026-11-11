@@ -197,10 +197,20 @@ def test_writer_creates_the_destination_folder(tmp_path: Path) -> None:
     assert (tmp_path / "out").is_dir()
 
 
-def test_writer_never_builds_a_path_on_a_missing_disk(tmp_path: Path) -> None:
+def test_writer_creates_a_typed_folder_that_does_not_exist_yet(tmp_path: Path) -> None:
+    writer = DestinationWriter(tmp_path / "2026" / "trip" / "selectie", ProjectSettings())
+
+    writer.ensure_destination()
+
+    assert (tmp_path / "2026" / "trip" / "selectie").is_dir()
+
+
+def test_writer_never_builds_a_path_on_a_missing_disk(tmp_path: Path, monkeypatch) -> None:
     """An unplugged USB disk's mount point must not get a folder tree on the internal disk."""
+    from fotozeef.core import selection
     from fotozeef.core.selection import SelectionError
 
+    monkeypatch.setattr(selection, "volume_missing", lambda path: "usb" in str(path))
     writer = DestinationWriter(tmp_path / "usb" / "Vakantie" / "selectie", ProjectSettings())
 
     with pytest.raises(SelectionError):
