@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap
 from fotozeef.core.models import TimelineEntry
 from fotozeef.core.thumbnails import (
     FILMSTRIP_SIZE,
+    GRID_SIZE,
     PREVIEW_SIZE,
     ThumbnailCache,
     ThumbnailRequest,
@@ -16,8 +17,10 @@ from fotozeef.core.thumbnails import (
 )
 
 _FILMSTRIP_CACHE_ENTRIES = 900
+_GRID_CACHE_ENTRIES = 240
 _PREVIEW_CACHE_ENTRIES = 16
-_SCALED_CACHE_ENTRIES = 600
+_SCALED_CACHE_BYTES = 160 * 1024 * 1024
+"""Scaled tiles are kept by size, not count: large overview tiles on HiDPI are megabytes."""
 
 
 class ThumbnailService(QObject):
@@ -38,6 +41,7 @@ class ThumbnailService(QObject):
         self._paths: dict[tuple[int, int], Path] = {}
         self._pixmaps: OrderedDict[tuple[int, int], QPixmap] = OrderedDict()
         self._scaled: OrderedDict[tuple[int, int, int, int], QPixmap] = OrderedDict()
+        self._scaled_bytes = 0
         self._worker = ThumbnailWorker(
             cache,
             max_workers=max_workers,
@@ -48,6 +52,11 @@ class ThumbnailService(QObject):
     @property
     def filmstrip_target(self) -> int:
         return int(FILMSTRIP_SIZE * self._scale)
+
+    @property
+    def grid_target(self) -> int:
+        """Sharp enough for the overview's larger tiles, far cheaper than a preview."""
+        return int(GRID_SIZE * self._scale)
 
     @property
     def preview_target(self) -> int:
@@ -64,6 +73,7 @@ class ThumbnailService(QObject):
         self._paths.clear()
         self._pixmaps.clear()
         self._scaled.clear()
+        self._scaled_bytes = 0
 
     def shutdown(self) -> None:
         self._worker.shutdown()
@@ -100,14 +110,19 @@ class ThumbnailService(QObject):
         )
         scaled.setDevicePixelRatio(ratio)
         self._scaled[key] = scaled
-        self._scaled.move_to_end(key)
-        while len(self._scaled) > _SCALED_CACHE_ENTRIES:
-            self._scaled.popitem(last=False)
+        self._scaled_bytes += _bytes(scaled)
+        while self._scaled_bytes > _SCALED_CACHE_BYTES and len(self._scaled) > 1:
+            _key, dropped = self._scaled.popitem(last=False)
+            self._scaled_bytes -= _bytes(dropped)
         return scaled
+
+    @property
+    def scaled_bytes(self) -> int:
+        return self._scaled_bytes
 
     def forget(self, photo_id: int) -> None:
         for key in [key for key in self._scaled if key[0] == photo_id]:
-            self._scaled.pop(key, None)
+            self._scaled_bytes -= _bytes(self._scaled.pop(key))
 
     def request(self, entry: TimelineEntry, target: int) -> None:
         key = (entry.photo.id, target)
@@ -139,8 +154,12 @@ class ThumbnailService(QObject):
         return pixmap
 
     def _trim(self, target: int) -> None:
-        is_preview = target >= self.preview_target
-        limit = _PREVIEW_CACHE_ENTRIES if is_preview else _FILMSTRIP_CACHE_ENTRIES
+        if target >= self.preview_target:
+            limit = _PREVIEW_CACHE_ENTRIES
+        elif target >= self.grid_target:
+            limit = _GRID_CACHE_ENTRIES
+        else:
+            limit = _FILMSTRIP_CACHE_ENTRIES
         same_target = [key for key in self._pixmaps if key[1] == target]
         while len(same_target) > limit:
             self._pixmaps.pop(same_target.pop(0), None)
@@ -151,3 +170,7 @@ class ThumbnailService(QObject):
 
     def _on_failed(self, request: ThumbnailRequest, error: Exception) -> None:
         self.failed.emit(request.photo_id, request.target, str(error))
+
+
+def _bytes(pixmap: QPixmap) -> int:
+    return pixmap.width() * pixmap.height() * 4

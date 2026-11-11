@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+import shiboken6
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -28,15 +29,17 @@ from PySide6.QtWidgets import (
 )
 
 from fotozeef.appinfo import APP_NAME
-from fotozeef.core.library import Library, ProjectState
-from fotozeef.core.models import TimelineEntry
+from fotozeef.core.library import Library, ProjectState, clocks, folder_key
+from fotozeef.core.models import Source, TimelineEntry
+from fotozeef.core.selection import DiskNotConnected
 from fotozeef.core.slideshow import PhotoScope, SlideOrder, SlideshowSettings, start_position
-from fotozeef.core.thumbnails import ThumbnailCache
+from fotozeef.core.thumbnails import FILMSTRIP_SIZE, ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
 from fotozeef.ui.full_image import FullImageLoader
 from fotozeef.ui.offset_dialog import OffsetDialog
 from fotozeef.ui.open_dialog import OpenProjectDialog
+from fotozeef.ui.overview import DEFAULT_ZOOM, OverviewPage
 from fotozeef.ui.project_dialog import ProjectDialog
 from fotozeef.ui.settings_dialog import SettingsDialog
 from fotozeef.ui.slideshow_dialog import SlideshowDialog
@@ -82,16 +85,28 @@ class MainWindow(QMainWindow):
         self._full: tuple[int, QPixmap] | None = None
 
         culling = QWidget(self)
+        self._overview = OverviewPage(
+            self._model, culling, pixmap=self._overview_pixmap, zoom=_saved_overview_zoom()
+        )
+        self._overview.zoom_changed.connect(_save_overview_zoom)
+        self._overview.grid.open_requested.connect(self._open_from_overview)
+        self._overview.grid.toggle_requested.connect(self._toggle_from_overview)
+        self._overview.grid.close_requested.connect(self.hide_overview)
+        self._views = QStackedWidget(culling)
+        self._views.addWidget(self._viewer)
+        self._views.addWidget(self._overview)
         layout = QVBoxLayout(culling)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._viewer, 1)
+        layout.addWidget(self._views, 1)
         layout.addWidget(self._filmstrip)
 
         self._start_screen = StartScreen(self)
         self._start_screen.new_requested.connect(self.new_project)
         self._start_screen.browse_requested.connect(self.open_project)
         self._start_screen.open_requested.connect(self._start_open)
+        self._start_screen.settings_requested.connect(self.edit_project_settings)
+        self._start_screen.remove_requested.connect(self.remove_project)
 
         self._pages = QStackedWidget(self)
         self._pages.addWidget(self._start_screen)
@@ -107,6 +122,8 @@ class MainWindow(QMainWindow):
         self._opener.progress.connect(self._on_scan_progress)
 
         self._slideshow: SlideshowWindow | None = None
+        self._notice: QMessageBox | None = None
+        self._disk_warning_open = False
         self._actions: list[QAction] = []
         self._preparer = SlideshowPreparer(self)
         self._preparer.prepared.connect(self._on_slideshow_prepared)
@@ -151,6 +168,8 @@ class MainWindow(QMainWindow):
             return
         self.stop_slideshow()
         self.leave_fullscreen()
+        self.hide_overview()
+        self._overview.set_only_selected(False)
         self._cursor_timer.stop()
         self._persist_cursor()
         self._selection_queue.flush()
@@ -197,19 +216,72 @@ class MainWindow(QMainWindow):
         self._refresh_start_screen()
 
     def edit_settings(self) -> None:
-        if self._state is None:
+        """The open project's settings (Project ▸ Settings…)."""
+        if self._state is not None:
+            self.edit_project_settings(self._state.project.id)
+
+    def edit_project_settings(self, project_id: int) -> None:
+        """Any project's settings: the open one, or one on the start screen."""
+        self._selection_queue.flush()
+        project = self._library.projects.get(project_id)
+        if project is None:
             return
-        dialog = SettingsDialog(self._state.project, self)
+        sources = self._library.sources.list(project_id)
+        dialog = SettingsDialog(project, sources, self)
         if dialog.exec() != SettingsDialog.DialogCode.Accepted:
             return
-        if dialog.destination != self._state.project.destination and not self._confirm_move():
+        if dialog.destination != project.destination and not self._confirm_move():
             return
-        project_id = self._state.project.id
+        kept = {folder_key(path) for path in dialog.source_paths}
+        dropped = [source for source in sources if folder_key(source.path) not in kept]
+        if dropped and not self._confirm_drop_sources(dropped):
+            return
         if dialog.name:
             self._library.projects.rename(project_id, dialog.name)
+        self._library.set_sources(project_id, dialog.source_paths)
         self._library.projects.set_destination(project_id, dialog.destination)
         self._library.projects.update_settings(project_id, dialog.settings)
-        self._start_open(project_id)
+        if self._state is not None and self._state.project.id == project_id:
+            self._start_open(project_id)
+        else:
+            self._refresh_start_screen()
+
+    def _confirm_drop_sources(self, dropped: Sequence[Source]) -> bool:
+        folders = "\n".join(str(source.path) for source in dropped)
+        text = self.tr(
+            "These folders leave the project, with their photos and time offsets:\n\n{0}"
+        ).format(folders)
+        text += "\n\n" + self.tr(
+            "Nothing is deleted from disk: the originals stay, and so do copies already in"
+            " the selection folder. Continue?"
+        )
+        answer = QMessageBox.question(
+            self,
+            APP_NAME,
+            text,
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QMessageBox.StandardButton.Ok
+
+    def remove_project(self, project_id: int) -> None:
+        """Asks first, then forgets the project; its photos and folders stay on disk."""
+        project = self._library.projects.get(project_id)
+        if project is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            APP_NAME,
+            self.tr(
+                "Remove “{0}” from FotoZeef?\n\n"
+                "Only the project goes: your photos, their folders and the selection folder"
+                " stay on disk as they are."
+            ).format(project.name),
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Ok:
+            self.forget_project(project_id)
 
     def _confirm_move(self) -> bool:
         answer = QMessageBox.question(
@@ -230,7 +302,7 @@ class MainWindow(QMainWindow):
             return
         current = self._state.current
         dialog = OffsetDialog(
-            self._state.sources,
+            clocks(self._state.entries, self._state.sources),
             reference=self._reference,
             target=current,
             reference_pixmap=self._thumbnail_for(self._reference),
@@ -242,8 +314,12 @@ class MainWindow(QMainWindow):
         changed = dialog.changed_offsets()
         if not changed:
             return
-        for source_id, offset in changed.items():
-            self._library.set_offset(self._state, source_id, offset)
+        for (source_id, camera), offset in changed.items():
+            self._library.set_offset(self._state, source_id, offset, camera=camera)
+        if self._reference is not None:
+            # Its offset may just have changed; calibrate against the fresh entry.
+            index = self._state.index_of(self._reference.photo.id)
+            self._reference = self._state.entries[index] if index is not None else None
         self._rebuild_timeline()
 
     def set_time_reference(self) -> None:
@@ -281,7 +357,51 @@ class MainWindow(QMainWindow):
             self.showNormal()
         self.menuBar().setVisible(True)
         self.statusBar().setVisible(True)
-        self._filmstrip.setVisible(True)
+        self._filmstrip.setVisible(not self.overview_shown)
+
+    @property
+    def overview_shown(self) -> bool:
+        return self._views.currentWidget() is self._overview
+
+    def toggle_overview(self) -> None:
+        if self.overview_shown:
+            self.hide_overview()
+        else:
+            self.show_overview()
+
+    def show_overview(self) -> None:
+        """All photos as a grid in place of the viewer, to find a spot in a long shoot."""
+        state = self._state
+        if state is None or not state.entries:
+            return
+        self._views.setCurrentWidget(self._overview)
+        self._filmstrip.setVisible(False)
+        self._update_status()
+        self._overview.grid.show_row(state.cursor)
+        self._overview.grid.setFocus()
+
+    def hide_overview(self) -> None:
+        if not self.overview_shown:
+            return
+        self._views.setCurrentWidget(self._viewer)
+        self._filmstrip.setVisible(not self._fullscreen)
+        self.setFocus()
+
+    def _overview_pixmap(self, entry: TimelineEntry, size: QSize) -> QPixmap | None:
+        """Large tiles use the sharper grid thumbnail, the filmstrip one until it is ready."""
+        if max(size.width(), size.height()) > FILMSTRIP_SIZE:
+            sharp = self._service.scaled_pixmap(entry, self._service.grid_target, size)
+            if sharp is not None:
+                return sharp
+        return self._service.scaled_pixmap(entry, self._service.filmstrip_target, size)
+
+    def _open_from_overview(self, row: int) -> None:
+        self.hide_overview()
+        self._set_cursor(row)
+
+    def _toggle_from_overview(self, row: int) -> None:
+        self._set_cursor(row)
+        self.toggle_selection()
 
     def start_slideshow(self) -> None:
         state = self._state
@@ -393,13 +513,23 @@ class MainWindow(QMainWindow):
         self._selection_queue.submit(photo_id, False, lambda: self._library.deselect(state, index))
 
     def zoom_in(self) -> None:
-        self._viewer.zoom_in()
+        """Larger overview tiles while the overview is shown, otherwise a closer photo."""
+        if self.overview_shown:
+            self._overview.zoom_by(1)
+        else:
+            self._viewer.zoom_in()
 
     def zoom_out(self) -> None:
-        self._viewer.zoom_out()
+        if self.overview_shown:
+            self._overview.zoom_by(-1)
+        else:
+            self._viewer.zoom_out()
 
     def zoom_to_fit(self) -> None:
-        self._viewer.zoom_to_fit()
+        if self.overview_shown:
+            self._overview.set_zoom(DEFAULT_ZOOM)
+        else:
+            self._viewer.zoom_to_fit()
 
     def zoom_to_actual_size(self) -> None:
         self._viewer.zoom_to_actual_size()
@@ -445,7 +575,9 @@ class MainWindow(QMainWindow):
         elif key == Qt.Key.Key_1:
             self.zoom_to_actual_size()
         elif key == Qt.Key.Key_Escape:
-            if self._viewer.zoomed:
+            if self.overview_shown:
+                self.hide_overview()
+            elif self._viewer.zoomed:
                 self.zoom_to_fit()
             else:
                 self.leave_fullscreen()
@@ -484,6 +616,7 @@ class MainWindow(QMainWindow):
 
         view_menu = self.menuBar().addMenu(self.tr("&View"))
         self._add(view_menu, self.tr("&Fullscreen"), "F", self.toggle_fullscreen)
+        self._add(view_menu, self.tr("&Overview of all photos"), "G", self.toggle_overview)
         self._add(view_menu, self.tr("&Slideshow…"), "F5", self.start_slideshow)
         view_menu.addSeparator()
         self._add(view_menu, self.tr("Zoom &in"), keys.ZoomIn, self.zoom_in)
@@ -526,6 +659,7 @@ class MainWindow(QMainWindow):
         self.menuBar().clear()
         self._build_menu()
         self._start_screen.retranslate()
+        self._overview.retranslate()
         self._refresh_start_screen()
         self._render_current()
         self._update_status()
@@ -572,6 +706,8 @@ class MainWindow(QMainWindow):
 
     def _on_project_opened(self, state: ProjectState) -> None:
         self._close_progress()
+        self.hide_overview()
+        self._overview.set_only_selected(False)
         self._state = state
         self._reference = None
         self._unreadable = set()
@@ -603,6 +739,48 @@ class MainWindow(QMainWindow):
             notes.append(self.tr("{0} video files skipped").format(state.scan.skipped_videos))
         if notes:
             self.statusBar().showMessage(", ".join(notes), 6000)
+        self._report_unreachable(state)
+
+    def _report_unreachable(self, state: ProjectState) -> None:
+        """Says plainly that a folder is not there, typically an unplugged USB disk."""
+        parts: list[str] = []
+        if state.scan.unreachable:
+            folders = "\n".join(str(path) for path in state.scan.unreachable)
+            parts.append(
+                self.tr(
+                    "These folders cannot be found:\n\n{0}\n\n"
+                    "Are they on a disk that is not connected? Their photos are shown as"
+                    " missing until you connect it and open the project again."
+                ).format(folders)
+            )
+        if state.scan.destination_unreachable:
+            parts.append(
+                self.tr(
+                    "The selection folder cannot be reached:\n{0}\n\n"
+                    "Connect its disk and open the project again to select photos."
+                ).format(state.project.destination)
+            )
+        if not parts:
+            return
+        parts.append(self.tr("Your selection so far is kept."))
+        self._close_notice()
+        notice = QMessageBox(QMessageBox.Icon.Warning, APP_NAME, "\n\n".join(parts), parent=self)
+        notice.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        notice.setModal(False)
+        notice.destroyed.connect(lambda *_args: self._forget_notice(notice))
+        self._notice = notice
+        notice.show()
+
+    def _close_notice(self) -> None:
+        notice = self._notice
+        if notice is not None and shiboken6.isValid(notice):
+            notice.close()
+        self._notice = None
+
+    def _forget_notice(self, notice: QMessageBox) -> None:
+        """Only the box that is still current: an older one is deleted later than replaced."""
+        if self._notice is notice:
+            self._notice = None
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()
@@ -714,7 +892,7 @@ class MainWindow(QMainWindow):
             self._render_current()
 
     def _on_thumbnail_ready(self, photo_id: int, target: int) -> None:
-        if target == self._service.filmstrip_target:
+        if target in (self._service.filmstrip_target, self._service.grid_target):
             self._model.refresh_photo(photo_id)
             return
         state = self._state
@@ -732,14 +910,41 @@ class MainWindow(QMainWindow):
             self._viewer.set_selected(selected)
         self._update_status()
 
-    def _on_selection_failed(self, photo_id: int, intended: bool, message: str) -> None:
+    def _on_selection_failed(self, photo_id: int, intended: bool, error: object) -> None:
         self._apply_selection_locally(photo_id, not intended)
+        if isinstance(error, DiskNotConnected):
+            self._warn_disk(error)
+            return
+        message = str(error)
         if not intended:
             self.statusBar().showMessage(message, 6000)
             return
         QMessageBox.warning(
             self, APP_NAME, self.tr("Could not copy the photo:\n{0}").format(message)
         )
+
+    def _warn_disk(self, error: DiskNotConnected) -> None:
+        """One dialog at a time: refusals for several photos arrive while it is open."""
+        if self._disk_warning_open:
+            return
+        if error.certain:
+            text = self.tr(
+                "The disk with {0} is not connected.\n\n"
+                "Connect it and open the project again. Until then photos cannot be"
+                " selected or unselected; your selection so far is kept."
+            ).format(error.path)
+        else:
+            text = self.tr(
+                "{0} no longer exists.\n\n"
+                "Is it on a disk that is not connected? Then connect it and open the project"
+                " again. Otherwise create that folder again, or choose another selection"
+                " folder under Project ▸ Settings."
+            ).format(error.path)
+        self._disk_warning_open = True
+        try:
+            QMessageBox.warning(self, APP_NAME, text)
+        finally:
+            self._disk_warning_open = False
 
     def _rebuild_timeline(self) -> None:
         state = self._state
@@ -768,6 +973,7 @@ class MainWindow(QMainWindow):
             return
         position = state.cursor + 1
         total = len(state.entries)
+        self._overview.update_summary(total, len(self._selected))
         destination = _short_path(state.project.destination)
         zoom = f"    {self._viewer.zoom * 100:.0f}%" if self._viewer.zoomed else ""
         self._status.setText(
@@ -775,6 +981,21 @@ class MainWindow(QMainWindow):
                 position, total, len(self._selected), zoom, destination
             )
         )
+
+
+_OVERVIEW_ZOOM_KEY = "overview/zoom"
+
+
+def _saved_overview_zoom() -> int:
+    value = QSettings().value(_OVERVIEW_ZOOM_KEY, DEFAULT_ZOOM)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ZOOM
+
+
+def _save_overview_zoom(zoom: int) -> None:
+    QSettings().setValue(_OVERVIEW_ZOOM_KEY, zoom)
 
 
 def _short_path(path: Path) -> str:

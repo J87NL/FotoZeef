@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import (
     QAbstractListModel,
@@ -14,7 +14,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from fotozeef.core.models import TimelineEntry
@@ -66,7 +66,7 @@ class FilmstripModel(QAbstractListModel):
         self.dataChanged.emit(index, index)
 
     def _tooltip_lines(self, entry: TimelineEntry) -> list[str]:
-        lines = [entry.photo.filename, entry.source.label]
+        lines = [entry.photo.filename, entry.camera_label]
         moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
         if entry.is_estimated_time:
             lines.append(
@@ -111,13 +111,31 @@ class FilmstripModel(QAbstractListModel):
         return None
 
 
+PixmapSource = Callable[[QModelIndex | QPersistentModelIndex, QSize], QPixmap | None]
+
+
 class FilmstripDelegate(QStyledItemDelegate):
+    """One thumbnail tile. The overview grid gives it its own size and pixmaps."""
+
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        size: QSize | None = None,
+        pixmap: PixmapSource | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._size = size or QSize(ITEM_WIDTH, ITEM_HEIGHT)
+        self._pixmap = pixmap
+
+    def set_size(self, size: QSize) -> None:
+        self._size = QSize(size)
+
     def sizeHint(
         self,
         option: QStyleOptionViewItem,
         index: QModelIndex | QPersistentModelIndex,
     ) -> QSize:
-        return QSize(ITEM_WIDTH, ITEM_HEIGHT)
+        return QSize(self._size)
 
     def paint(
         self,
@@ -129,7 +147,10 @@ class FilmstripDelegate(QStyledItemDelegate):
         painter.save()
         painter.fillRect(option.rect, QColor(28, 28, 30))
 
-        pixmap = index.data(THUMBNAIL_ROLE)
+        if self._pixmap is not None:
+            pixmap = self._pixmap(index, rect.size())
+        else:
+            pixmap = index.data(THUMBNAIL_ROLE)
         if pixmap is None:
             painter.fillRect(rect, QColor(48, 48, 52))
         else:

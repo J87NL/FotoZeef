@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+import filecmp
 import re
 import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from fotozeef.core import xmp
-from fotozeef.core.fs import normalize_name, os_path
+from fotozeef.core.fs import looks_unmounted, normalize_name, os_path, volume_missing
 from fotozeef.core.models import ProjectSettings, Selection, TimelineEntry
 
 _LABEL_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -17,23 +17,35 @@ class SelectionError(RuntimeError):
     pass
 
 
+class DiskNotConnected(SelectionError):
+    """The disk with this folder is not connected; the UI words it for the user.
+
+    `certain` is False when the folder is merely gone from what looks like an empty
+    mount folder: then the user may also have deleted it, or meant another folder.
+    """
+
+    def __init__(self, path: Path, certain: bool = True) -> None:
+        super().__init__(f"The disk with {path} is not connected. Connect it and try again.")
+        self.path = path
+        self.certain = certain
+
+
 @dataclass(frozen=True, slots=True)
 class WriteResult:
     photo_id: int
     written_name: str
     companion_names: tuple[str, ...]
-    sidecar: Path | None
 
 
 @dataclass(slots=True)
 class ReconcileResult:
     dropped: list[int] = field(default_factory=list)
     adopted: list[tuple[int, str]] = field(default_factory=list)
-    adopted_from_sidecar: list[int] = field(default_factory=list)
+    unreachable: bool = False
 
     @property
     def changed(self) -> bool:
-        return bool(self.dropped or self.adopted or self.adopted_from_sidecar)
+        return bool(self.dropped or self.adopted)
 
 
 class DestinationWriter:
@@ -45,15 +57,29 @@ class DestinationWriter:
     def destination(self) -> Path:
         return self._destination
 
-    def ensure_destination(self) -> None:
+    def ensure_destination(self, had_selections: bool = False) -> None:
+        """Creates the destination folder, unless the disk it belongs on is not connected.
+
+        Creating it then would put it on the internal disk, in the empty folder where the
+        disk is normally mounted. Besides the usual mount places, a destination that held
+        a selection before and whose parent is gone counts as such a disk too.
+        """
+        self._check_disk(self._destination)
+        destination = self._destination
+        if had_selections and not destination.is_dir() and looks_unmounted(destination):
+            raise DiskNotConnected(destination, certain=False)
         self._destination.mkdir(parents=True, exist_ok=True)
+
+    def _check_disk(self, path: Path) -> None:
+        if volume_missing(path):
+            raise DiskNotConnected(path)
 
     def select(
         self,
         entry: TimelineEntry,
         reserved: Mapping[str, int],
     ) -> WriteResult:
-        self.ensure_destination()
+        self.ensure_destination(had_selections=bool(reserved))
         written_name = self._resolve_name(entry, reserved)
         target = self._destination / written_name
         shutil.copy2(os_path(entry.absolute_path), os_path(target))
@@ -66,21 +92,29 @@ class DestinationWriter:
                 companion_target = self._destination / companion_name
                 if companion_target.exists() and normalize_name(companion_name) in reserved:
                     continue
-                shutil.copy2(os_path(companion), os_path(companion_target))
+                if not (companion_target.exists() and _same_file(companion_target, companion)):
+                    shutil.copy2(os_path(companion), os_path(companion_target))
                 companion_names.append(companion_name)
-
-        sidecar: Path | None = None
-        if self._settings.write_xmp:
-            sidecar = xmp.write_sidecar(entry.absolute_path)
 
         return WriteResult(
             photo_id=entry.photo.id,
             written_name=written_name,
             companion_names=tuple(companion_names),
-            sidecar=sidecar,
         )
 
-    def deselect(self, entry: TimelineEntry, selection: Selection) -> None:
+    def deselect(
+        self,
+        entry: TimelineEntry,
+        selection: Selection,
+        reserved: Mapping[str, int] | None = None,
+    ) -> None:
+        """Removes this photo's copy, and the RAW copied with it if it really is that RAW.
+
+        Refused while the destination's or the original's disk is not connected: the copy
+        could not be removed, and it would come back as a stranger's file later.
+        """
+        self._check_disk(self._destination)
+        self._check_disk(entry.absolute_path)
         if not selection.written_by_app:
             raise SelectionError(
                 f"{selection.written_name} was not written by this app; remove it yourself"
@@ -88,21 +122,26 @@ class DestinationWriter:
         target = self._destination / selection.written_name
         target.unlink(missing_ok=True)
 
+        others = reserved or {}
         stem = PurePosixPath(selection.written_name).stem
-        for companion in entry.photo.companions:
+        for companion, source in zip(entry.photo.companions, entry.companion_paths, strict=True):
             companion_name = f"{stem}{PurePosixPath(companion).suffix}"
-            (self._destination / companion_name).unlink(missing_ok=True)
-
-        xmp.remove_sidecar(entry.absolute_path)
+            owner = others.get(normalize_name(companion_name))
+            if owner is not None and owner != entry.photo.id:
+                continue
+            copy = self._destination / companion_name
+            if _same_file(copy, source):
+                copy.unlink(missing_ok=True)
 
     def _resolve_name(self, entry: TimelineEntry, reserved: Mapping[str, int]) -> str:
         filename = entry.photo.filename
-        candidates = [filename, f"{_safe_label(entry.source.label)}_{filename}"]
+        candidates = [filename, f"{_safe_label(entry.camera_label)}_{filename}"]
         stem = PurePosixPath(candidates[1]).stem
         suffix = PurePosixPath(filename).suffix
         candidates.extend(f"{stem}_{index}{suffix}" for index in range(2, 100))
         for candidate in candidates:
-            if self._is_available(candidate, entry.photo.id, reserved):
+            free = self._is_available(candidate, entry.photo.id, reserved)
+            if free and self._room_for_companions(candidate, entry, reserved):
                 return candidate
         raise SelectionError(f"No free filename in destination for {filename}")
 
@@ -115,6 +154,22 @@ class DestinationWriter:
             return True
         return not (self._destination / candidate).exists()
 
+    def _room_for_companions(
+        self, candidate: str, entry: TimelineEntry, reserved: Mapping[str, int]
+    ) -> bool:
+        """A name whose RAW would overwrite a file that is not this photo's is taken."""
+        if not self._settings.copy_raw_sidecar:
+            return True
+        stem = PurePosixPath(candidate).stem
+        for companion, source in zip(entry.photo.companions, entry.companion_paths, strict=True):
+            name = f"{stem}{PurePosixPath(companion).suffix}"
+            if reserved.get(normalize_name(name)) == entry.photo.id:
+                continue
+            existing = self._destination / name
+            if existing.exists() and not _same_file(existing, source):
+                return False
+        return True
+
 
 def reserved_names(selections: Iterable[Selection]) -> dict[str, int]:
     return {normalize_name(item.written_name): item.photo_id for item in selections}
@@ -126,10 +181,21 @@ def reconcile(
     selections: Iterable[Selection],
     settings: ProjectSettings,
 ) -> ReconcileResult:
-    """Destination folder is the source of truth for what is selected."""
+    """Destination folder is the source of truth for what is selected.
+
+    A file there counts as a photo's copy only when its name and its size match; a
+    leftover copy of a photo from a folder that left the project is never handed to
+    another photo that happens to share its name. A destination that cannot be reached,
+    because the disk it is on is not connected, changes nothing.
+    """
     result = ReconcileResult()
     entry_list = list(entries)
     selection_list = list(selections)
+
+    unmounted_elsewhere = not destination.is_dir() and looks_unmounted(destination)
+    if volume_missing(destination) or (selection_list and unmounted_elsewhere):
+        result.unreachable = True
+        return result
 
     present: dict[str, Path] = {}
     if destination.is_dir():
@@ -148,30 +214,44 @@ def reconcile(
     result.dropped = sorted(dropped)
 
     selected_ids = {item.photo_id for item in selection_list if item.photo_id not in dropped}
-    by_filename: dict[str, TimelineEntry] = {}
+    by_filename: dict[str, list[TimelineEntry]] = {}
     for entry in entry_list:
-        by_filename.setdefault(normalize_name(entry.photo.filename), entry)
+        by_filename.setdefault(normalize_name(entry.photo.filename), []).append(entry)
 
-    for key, _path in present.items():
+    for key, path in present.items():
         if key in claimed:
             continue
-        entry = by_filename.get(key)
-        if entry is None or entry.photo.id in selected_ids:
-            continue
-        result.adopted.append((entry.photo.id, _path.name))
-        selected_ids.add(entry.photo.id)
-
-    if settings.write_xmp:
-        for entry in entry_list:
-            if entry.photo.id in selected_ids:
+        size = _size(path)
+        for entry in by_filename.get(key, ()):
+            if entry.photo.id in selected_ids or entry.photo.file_size != size:
                 continue
-            rating = xmp.read_rating(entry.absolute_path)
-            if rating is None or rating < 1:
-                continue
-            result.adopted_from_sidecar.append(entry.photo.id)
+            result.adopted.append((entry.photo.id, path.name))
             selected_ids.add(entry.photo.id)
+            break
 
     return result
+
+
+def _size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
+def _same_file(copy: Path, original: Path) -> bool:
+    """Whether a destination file is a copy of this original, byte for byte.
+
+    Size alone is not enough for RAW files: uncompressed RAF, ARW and NEF files from one
+    camera all have the same size. Only same-sized files are read.
+    """
+    size = _size(copy)
+    if size is None or size != _size(original):
+        return False
+    try:
+        return filecmp.cmp(os_path(copy), os_path(original), shallow=False)
+    except OSError:
+        return False
 
 
 def _safe_label(label: str) -> str:

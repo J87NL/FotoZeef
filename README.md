@@ -15,6 +15,11 @@ Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases)
   it; nothing to install. Needs only the graphics stack (`libegl1`, `libgl1`),
   which every desktop already has.
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
+  To update, run the newer installer over the old one: it replaces the program
+  and keeps your projects. Going back is not possible, because an older
+  FotoZeef cannot open projects saved by a newer one: installers from 0.4.0 on
+  refuse to go over a newer version, and the 0.3.0 installer, which cannot check
+  this yet, should not be run over 0.4.0 or later.
 - **macOS** — `FotoZeef-<version>-macos.zip`, for Macs with Apple silicon (M1
   and later) on macOS 13 Ventura or newer. Unzip it and move `FotoZeef.app` to
   *Applications*. The app is not signed by Apple, so the first time macOS
@@ -34,6 +39,11 @@ Create a project on the start screen, add one or more folders, and leave the
 destination blank to get `<first folder>/selectie`. Then arrow keys to move,
 space to keep.
 
+Recent projects are listed on the start screen. *Settings…* (or right-click)
+changes a project's name, folders and destination without opening it;
+*Remove…* takes it off the list. Removing a project or a folder never deletes
+photos: the originals and the selection folder stay on disk.
+
 ## Keyboard
 
 | Key | Action |
@@ -46,6 +56,8 @@ space to keep.
 | `0` | Fit to window |
 | `1` | Actual size |
 | `F` | Fullscreen |
+| `G` | Overview of all photos (Enter opens one, Esc returns) |
+| `Ctrl/Cmd` + scroll, `Ctrl/Cmd` `+` / `-` | Larger or smaller tiles in the overview |
 | `Esc` | Unzoom, then leave fullscreen |
 | `F5` | Slideshow (see below) |
 | `Ctrl/Cmd + N` | New project |
@@ -118,7 +130,23 @@ while the screen is black brings the photo back; the show stays paused until
   in the timeline is guessed from the file date.
 - **Two cameras out of sync?** Mark a photo with *Timeline ▸ Set time reference*,
   go to the same moment from the other camera, and apply the delta under
-  *Timeline ▸ Time offsets…*.
+  *Timeline ▸ Time offsets…*. Offsets are set per camera (from EXIF) within each
+  folder, so one folder with a subfolder per camera works too. Two bodies of
+  the same model in one folder share an offset; add their folders separately to
+  set them apart.
+- **Lost in a long shoot?** `G` shows every photo as a grid, with a filter for
+  just the selected ones. `Ctrl/Cmd` with the mouse wheel, or `Ctrl/Cmd` `+` /
+  `-`, makes the tiles larger or smaller; `0` brings them back to normal.
+- **Photos on a USB disk?** Opening the project while the disk is not connected
+  is safe: FotoZeef says which folders it cannot find, shows their photos as
+  missing and keeps your selection. Selecting and unselecting are refused until
+  the disk is back. Connect it and open the project again. On Windows the disk
+  has to come back under the same drive letter (E:, F:, …); if Windows gives it
+  another one, change it back in Disk Management or point the project at the
+  new letter under *Settings…*.
+- **What counts as selected** is what is in the selection folder. A file there
+  counts for a photo when its name and its size match, so an unchanged copy you
+  put in by hand is picked up too; an edited or rotated one is not.
 - **Language** — English and Dutch, under *View ▸ Language*.
 - **Starting over** — FotoZeef keeps its database and thumbnails in
   `~/.local/share/FotoZeef/` and `~/.cache/FotoZeef/`. Delete those; your photos

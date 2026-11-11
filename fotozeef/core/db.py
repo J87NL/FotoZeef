@@ -5,6 +5,7 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from fotozeef.core.models import (
     Source,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE projects (
@@ -28,7 +29,7 @@ CREATE TABLE projects (
     cursor_photo     INTEGER NULL REFERENCES photos(id) ON DELETE SET NULL,
     recursive        INTEGER NOT NULL DEFAULT 1,
     copy_raw_sidecar INTEGER NOT NULL DEFAULT 1,
-    write_xmp        INTEGER NOT NULL DEFAULT 0,
+    write_xmp        INTEGER NOT NULL DEFAULT 0, -- unused since XMP sidecars were dropped
     created_at       TEXT NOT NULL,
     opened_at        TEXT NOT NULL
 );
@@ -72,6 +73,14 @@ CREATE INDEX idx_selections_project ON selections(project_id);
 """
 
 _MIGRATIONS: dict[int, str] = {
+    3: """
+CREATE TABLE IF NOT EXISTS camera_offsets (
+    source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    camera    TEXT NOT NULL,
+    offset_s  INTEGER NOT NULL,
+    PRIMARY KEY (source_id, camera)
+);
+""",
     2: """
 CREATE TABLE IF NOT EXISTS slideshow_settings (
     project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -95,6 +104,15 @@ def _from_iso(value: str | None) -> datetime | None:
     if value is None:
         return None
     return datetime.fromisoformat(value)
+
+
+class NewerDatabaseError(RuntimeError):
+    """The database was written by a newer FotoZeef than this one."""
+
+    def __init__(self, found: int, supported: int) -> None:
+        super().__init__(f"Database schema {found} is newer than this build supports ({supported})")
+        self.found = found
+        self.supported = supported
 
 
 class Database:
@@ -161,9 +179,7 @@ class Database:
         if version == SCHEMA_VERSION:
             return
         if version > SCHEMA_VERSION:
-            raise RuntimeError(
-                f"Database schema {version} is newer than this build supports ({SCHEMA_VERSION})"
-            )
+            raise NewerDatabaseError(version, SCHEMA_VERSION)
         with self._write_lock, connection:
             if version == 0:
                 connection.executescript(_SCHEMA)
@@ -187,14 +203,13 @@ class ProjectRepository:
         with self._db.write() as connection:
             cursor = connection.execute(
                 "INSERT INTO projects (name, destination, cursor_photo, recursive,"
-                " copy_raw_sidecar, write_xmp, created_at, opened_at)"
-                " VALUES (?, ?, NULL, ?, ?, ?, ?, ?)",
+                " copy_raw_sidecar, created_at, opened_at)"
+                " VALUES (?, ?, NULL, ?, ?, ?, ?)",
                 (
                     name,
                     str(destination),
                     int(settings.recursive),
                     int(settings.copy_raw_sidecar),
-                    int(settings.write_xmp),
                     _to_iso(now),
                     _to_iso(now),
                 ),
@@ -226,12 +241,10 @@ class ProjectRepository:
     def update_settings(self, project_id: int, settings: ProjectSettings) -> None:
         with self._db.write() as connection:
             connection.execute(
-                "UPDATE projects SET recursive = ?, copy_raw_sidecar = ?, write_xmp = ?"
-                " WHERE id = ?",
+                "UPDATE projects SET recursive = ?, copy_raw_sidecar = ? WHERE id = ?",
                 (
                     int(settings.recursive),
                     int(settings.copy_raw_sidecar),
-                    int(settings.write_xmp),
                     project_id,
                 ),
             )
@@ -286,11 +299,33 @@ class SourceRepository:
         )
 
     def list(self, project_id: int) -> tuple[Source, ...]:
-        rows = self._db.connection.execute(
+        connection = self._db.connection
+        rows = connection.execute(
             "SELECT * FROM sources WHERE project_id = ? ORDER BY sort_order, id",
             (project_id,),
         ).fetchall()
-        return tuple(_source_from_row(row) for row in rows)
+        offsets: dict[int, list[tuple[str, int]]] = {}
+        for row in connection.execute(
+            "SELECT camera_offsets.* FROM camera_offsets"
+            " JOIN sources ON sources.id = camera_offsets.source_id"
+            " WHERE sources.project_id = ? ORDER BY camera_offsets.camera",
+            (project_id,),
+        ):
+            offsets.setdefault(int(row["source_id"]), []).append(
+                (str(row["camera"]), int(row["offset_s"]))
+            )
+        return tuple(
+            replace(_source_from_row(row), camera_offsets=tuple(offsets.get(int(row["id"]), ())))
+            for row in rows
+        )
+
+    def set_camera_offset(self, source_id: int, camera: str, offset_s: int) -> None:
+        with self._db.write() as connection:
+            connection.execute(
+                "INSERT INTO camera_offsets (source_id, camera, offset_s) VALUES (?, ?, ?)"
+                " ON CONFLICT (source_id, camera) DO UPDATE SET offset_s = excluded.offset_s",
+                (source_id, camera, offset_s),
+            )
 
     def set_offset(self, source_id: int, time_offset_s: int) -> None:
         with self._db.write() as connection:
@@ -457,7 +492,6 @@ def _project_from_row(row: sqlite3.Row) -> Project:
         settings=ProjectSettings(
             recursive=bool(row["recursive"]),
             copy_raw_sidecar=bool(row["copy_raw_sidecar"]),
-            write_xmp=bool(row["write_xmp"]),
         ),
         created_at=_from_iso(row["created_at"]) or utcnow(),
         opened_at=_from_iso(row["opened_at"]) or utcnow(),

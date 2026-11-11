@@ -13,6 +13,7 @@ from fotozeef.core.imaging import register_codecs
 from fotozeef.core.scanner import RAW_EXTENSIONS
 
 FILMSTRIP_SIZE = 200
+GRID_SIZE = 400
 PREVIEW_SIZE = 2048
 JPEG_QUALITY = 85
 MAX_FULL_PIXELS = 60_000_000
@@ -25,6 +26,7 @@ BACKDROP_BRIGHTNESS = 0.45
 
 class ThumbnailSize(IntEnum):
     FILMSTRIP = FILMSTRIP_SIZE
+    GRID = GRID_SIZE
     PREVIEW = PREVIEW_SIZE
 
 

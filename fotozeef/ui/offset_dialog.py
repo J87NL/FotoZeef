@@ -17,18 +17,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fotozeef.core.models import Source, TimelineEntry
+from fotozeef.core.library import Clock
+from fotozeef.core.models import TimelineEntry
 from fotozeef.core.ordering import calibration_offset
 
 _OFFSET_LIMIT = 60 * 60 * 24 * 7
 
 
 class OffsetDialog(QDialog):
-    """Per-source clock correction, with a two-photo calibration shortcut."""
+    """Clock correction per camera per folder, with a two-photo calibration shortcut."""
 
     def __init__(
         self,
-        sources: Sequence[Source],
+        clocks: Sequence[Clock],
         reference: TimelineEntry | None = None,
         target: TimelineEntry | None = None,
         reference_pixmap: QPixmap | None = None,
@@ -38,22 +39,23 @@ class OffsetDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(self.tr("Time offsets"))
         self.setMinimumWidth(560)
-        self._sources = tuple(sources)
-        self._spins: dict[int, QSpinBox] = {}
+        self._clocks = tuple(clocks)
+        self._spins: dict[tuple[int, str], QSpinBox] = {}
+        several_folders = len({clock.source.id for clock in self._clocks}) > 1
 
         form = QFormLayout()
-        for source in self._sources:
+        for clock in self._clocks:
             spin = QSpinBox(self)
             spin.setRange(-_OFFSET_LIMIT, _OFFSET_LIMIT)
             spin.setSingleStep(60)
             spin.setSuffix(" s")
-            spin.setValue(source.time_offset_s)
-            spin.setToolTip(str(source.path))
-            self._spins[source.id] = spin
-            form.addRow(source.label, spin)
+            spin.setValue(clock.offset)
+            spin.setToolTip(str(clock.source.path))
+            self._spins[clock.key] = spin
+            form.addRow(self._clock_label(clock, several_folders), spin)
 
         layout = QVBoxLayout(self)
-        box = QGroupBox(self.tr("Offset per source"), self)
+        box = QGroupBox(self.tr("Offset per camera"), self)
         box.setLayout(form)
         layout.addWidget(box)
 
@@ -69,16 +71,24 @@ class OffsetDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def offsets(self) -> dict[int, int]:
-        return {source_id: spin.value() for source_id, spin in self._spins.items()}
+    def offsets(self) -> dict[tuple[int, str], int]:
+        return {key: spin.value() for key, spin in self._spins.items()}
 
-    def changed_offsets(self) -> dict[int, int]:
+    def changed_offsets(self) -> dict[tuple[int, str], int]:
+        """(source id, camera) to its new offset, for the cameras that changed."""
         current = self.offsets()
         return {
-            source.id: current[source.id]
-            for source in self._sources
-            if current[source.id] != source.time_offset_s
+            clock.key: current[clock.key]
+            for clock in self._clocks
+            if current[clock.key] != clock.offset
         }
+
+    def _clock_label(self, clock: Clock, several_folders: bool) -> str:
+        camera = clock.camera or self.tr("Unknown camera")
+        label = self.tr("{0} ({1} photos)").format(camera, clock.photos)
+        if several_folders:
+            label = f"{label} — {clock.source.path.name or clock.source.path}"
+        return label
 
     def _build_calibration(
         self,
@@ -91,21 +101,23 @@ class OffsetDialog(QDialog):
         layout = QVBoxLayout(box)
 
         if reference is None or target is None:
-            layout.addWidget(
-                QLabel(
-                    self.tr(
-                        "Mark a reference photo (Timeline ▸ Set time reference), then move to"
-                        " the matching photo from the other camera and reopen this dialog."
-                    ),
-                    box,
-                )
+            explanation = QLabel(
+                self.tr(
+                    "Mark a reference photo (Timeline ▸ Set time reference), then move to"
+                    " the matching photo from the other camera and reopen this dialog."
+                ),
+                box,
             )
+            explanation.setWordWrap(True)
+            layout.addWidget(explanation)
             return box
 
-        if reference.source.id == target.source.id:
+        if reference.clock == target.clock:
             layout.addWidget(
-                QLabel(self.tr("The reference photo and the current photo share one source."), box)
+                QLabel(self.tr("The reference photo and the current photo share one camera."), box)
             )
+            return box
+        if target.clock not in self._spins:
             return box
 
         delta = calibration_offset(reference, target)
@@ -114,8 +126,8 @@ class OffsetDialog(QDialog):
         photos.addWidget(self._photo_card(box, self.tr("Current"), target, target_pixmap))
         layout.addLayout(photos)
 
-        apply = QPushButton(self.tr("Set {0} to {1:+d} s").format(target.source.label, delta), box)
-        apply.clicked.connect(lambda: self._spins[target.source.id].setValue(delta))
+        apply = QPushButton(self.tr("Set {0} to {1:+d} s").format(target.camera_label, delta), box)
+        apply.clicked.connect(lambda: self._spins[target.clock].setValue(delta))
         layout.addWidget(apply)
         return box
 
@@ -129,7 +141,7 @@ class OffsetDialog(QDialog):
         card = QWidget(parent)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(0, 0, 0, 0)
-        heading = QLabel(f"{title} — {entry.source.label}", card)
+        heading = QLabel(f"{title} — {entry.camera_label}", card)
         heading.setStyleSheet("font-weight: 600;")
         layout.addWidget(heading)
         if pixmap is not None and not pixmap.isNull():

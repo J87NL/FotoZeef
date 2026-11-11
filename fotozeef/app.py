@@ -19,7 +19,7 @@ from fotozeef.appinfo import (
     cache_dir,
     database_path,
 )
-from fotozeef.core.db import Database
+from fotozeef.core.db import Database, NewerDatabaseError
 from fotozeef.core.library import Library
 from fotozeef.core.thumbnails import ThumbnailCache
 from fotozeef.ui.main_window import MainWindow
@@ -107,6 +107,23 @@ def selftest() -> int:
     return 0
 
 
+def show_newer_database_message() -> None:
+    """An older FotoZeef over a newer one's data: say what to do instead of crashing."""
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtWidgets import QMessageBox
+
+    QMessageBox.critical(
+        None,
+        APP_NAME,
+        QCoreApplication.translate(
+            "FotoZeef",
+            "Your projects were saved by a newer version of FotoZeef than this one ({0}).\n\n"
+            "Install the latest version from the releases page to open them. Nothing has been"
+            " changed.",
+        ).format(APP_VERSION),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv)
     logging.basicConfig(
@@ -122,7 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     app = build_application(arguments)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    library = Library(Database(database_path()))
+    try:
+        database = Database(database_path())
+    except NewerDatabaseError:
+        show_newer_database_message()
+        return 1
+    library = Library(database)
     window = MainWindow(library, ThumbnailCache(cache_dir()))
     window.show()
     window.open_last_project()

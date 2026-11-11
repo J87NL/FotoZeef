@@ -61,8 +61,9 @@ test suite fast and leaves the door open for a CLI later.
 | Database | `platformdirs.user_data_dir("FotoZeef")/fotozeef.sqlite` |
 | Thumbnails | `platformdirs.user_cache_dir("FotoZeef")` |
 
-One database for the whole installation, never next to the photos. The only thing
-written into a source folder is the optional XMP sidecar, which is off by default.
+One database for the whole installation, never next to the photos. Nothing is
+written into a source folder, except the selection folder when you leave the
+destination at its default `<first source>/selectie`.
 
 ## Translations
 
@@ -130,7 +131,12 @@ real installer, with [Inno Setup] 6 installed:
 ```
 
 That writes `packaging\windows\Output\FotoZeef-<version>-setup.exe`, which
-installs per-user without admin rights. The bundled manifest turns on long-path
+installs per-user without admin rights. It upgrades in place (same `AppId`),
+first deleting the previous `_internal` folder so no stale files stay behind,
+and refuses to install over a newer version because that version may have
+migrated the database further (from 0.4.0 on; older installers lack the check).
+It follows the Windows language (English or Dutch) without asking; the script
+is UTF-8 with a BOM, which Inno Setup needs for the Dutch text. The bundled manifest turns on long-path
 awareness and PerMonitorV2 DPI.
 
 ### macOS — .app
@@ -239,7 +245,24 @@ it yourself triggers none of it.
    never reappears in the timeline.
 4. **Recursive scanning** — on by default, per-project setting.
 5. **`copy_raw_sidecar`** — on by default, per-project setting.
-6. **XMP sidecars** — shipped but **off by default**, per-project setting. This is
-   the one feature that writes into a source folder (a `.xmp` next to the original,
-   removed again on deselect if this app wrote it). Everything else treats the
-   source folders as read-only.
+6. **What is selected, and disks that come and go** — `selection.reconcile`
+   reads the destination: a file there belongs to a photo when its name and
+   size match, so a leftover copy of a photo that left the project is never
+   handed to a different photo with the same name. When the disk a destination
+   or source lives on is not connected (`fs.volume_missing`: a drive letter
+   that is gone, or under `/media`, `/run/media`, `/mnt` or `/Volumes` no mount
+   on the way and only an empty or missing folder left), nothing is dropped,
+   nothing is created on the empty mount point, and selecting or unselecting
+   is refused until it is back. A plain folder with files in it under `/mnt`
+   counts as present; an empty one there cannot be told apart from an
+   unmounted disk. Disks mounted elsewhere are caught one way only: a
+   destination that held a selection is gone and the nearest folder above it
+   is empty, which is what a mount folder looks like without its disk. A
+   destination deleted from a folder with files in it (or a new one typed in
+   Settings) is simply created again.
+   Folders leaving a project never delete anything from disk.
+7. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
+   original was dropped in 0.4: the originals and their folders are read-only.
+   The `write_xmp` column stays in the database, unused, so older databases open
+   unchanged. Sidecars written by 0.3 or earlier (marked `fotozeef`) are left
+   where they are; delete them by hand if a tool shows their rating.

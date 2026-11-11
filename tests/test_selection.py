@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from fotozeef.core import xmp
 from fotozeef.core.library import Library
 from fotozeef.core.models import ProjectSettings
 from fotozeef.core.selection import (
@@ -163,36 +162,6 @@ def test_reconcile_adopts_unknown_destination_files(
     assert reopened.selections[photo_id].written_by_app is False
 
 
-def test_xmp_sidecar_written_and_removed(tmp_path: Path, library: Library, jpeg_factory) -> None:
-    source = tmp_path / "cam"
-    original = jpeg_factory(source / "IMG_0001.JPG")
-    destination = tmp_path / "out"
-
-    state = _open(library, [source], destination, write_xmp=True)
-    library.select(state, 0)
-    assert xmp.read_rating(original) == 5
-
-    library.deselect(state, 0)
-    assert xmp.read_rating(original) is None
-
-
-def test_existing_sidecar_counts_as_selected(
-    tmp_path: Path, library: Library, jpeg_factory
-) -> None:
-    source = tmp_path / "cam"
-    original = jpeg_factory(source / "IMG_0001.JPG")
-    destination = tmp_path / "out"
-
-    state = _open(library, [source], destination, write_xmp=True)
-    assert state.selections == {}
-
-    xmp.write_sidecar(original, rating=4)
-    reopened = library.open_project(state.project.id)
-
-    assert reopened.selections
-    assert (destination / "IMG_0001.JPG").is_file()
-
-
 def test_reserved_names_are_case_folded(tmp_path: Path, library: Library, jpeg_factory) -> None:
     source = tmp_path / "cam"
     jpeg_factory(source / "IMG_0001.JPG")
@@ -221,8 +190,29 @@ def test_reconcile_is_stable_when_nothing_changed(
     assert not result.changed
 
 
-def test_writer_needs_no_existing_destination(tmp_path: Path) -> None:
-    writer = DestinationWriter(tmp_path / "deep" / "out", ProjectSettings())
+def test_writer_creates_the_destination_folder(tmp_path: Path) -> None:
+    writer = DestinationWriter(tmp_path / "out", ProjectSettings())
     writer.ensure_destination()
 
-    assert (tmp_path / "deep" / "out").is_dir()
+    assert (tmp_path / "out").is_dir()
+
+
+def test_writer_creates_a_typed_folder_that_does_not_exist_yet(tmp_path: Path) -> None:
+    writer = DestinationWriter(tmp_path / "2026" / "trip" / "selectie", ProjectSettings())
+
+    writer.ensure_destination()
+
+    assert (tmp_path / "2026" / "trip" / "selectie").is_dir()
+
+
+def test_writer_never_builds_a_path_on_a_missing_disk(tmp_path: Path, monkeypatch) -> None:
+    """An unplugged USB disk's mount point must not get a folder tree on the internal disk."""
+    from fotozeef.core import selection
+    from fotozeef.core.selection import SelectionError
+
+    monkeypatch.setattr(selection, "volume_missing", lambda path: "usb" in str(path))
+    writer = DestinationWriter(tmp_path / "usb" / "Vakantie" / "selectie", ProjectSettings())
+
+    with pytest.raises(SelectionError):
+        writer.ensure_destination()
+    assert not (tmp_path / "usb").exists()

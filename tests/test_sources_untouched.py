@@ -79,18 +79,16 @@ def test_a_default_destination_inside_a_source_stays_out_of_the_timeline(
     assert len(reopened.entries) == original_count
 
 
-def test_xmp_is_the_only_thing_that_may_write_into_a_source(
+def test_nothing_is_ever_written_into_a_source(
     tmp_path: Path, library: Library, jpeg_factory
 ) -> None:
     source = _shoot(tmp_path, jpeg_factory)
     before = set(_fingerprint(source))
-    settings = ProjectSettings(write_xmp=True)
-    project = library.create_project("shoot", [source], tmp_path / "out", settings)
+    project = library.create_project("shoot", [source], tmp_path / "out", ProjectSettings())
     state = library.open_project(project.id)
 
     library.select(state, 0)
-    added = set(_fingerprint(source)) - before
-    assert all(name.endswith(".xmp") for name in added)
+    assert set(_fingerprint(source)) == before
 
     library.deselect(state, 0)
     assert set(_fingerprint(source)) == before

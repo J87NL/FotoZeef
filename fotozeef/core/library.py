@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from fotozeef.core import ordering
@@ -16,6 +17,7 @@ from fotozeef.core.db import (
     SlideshowRepository,
     SourceRepository,
 )
+from fotozeef.core.fs import volume_missing
 from fotozeef.core.metadata import read_metadata
 from fotozeef.core.models import (
     Photo,
@@ -25,6 +27,7 @@ from fotozeef.core.models import (
     Selection,
     Source,
     TimelineEntry,
+    camera_key,
 )
 from fotozeef.core.scanner import ScannedGroup, scan
 from fotozeef.core.slideshow import SlideshowSettings
@@ -40,6 +43,9 @@ class ScanSummary:
     missing: int = 0
     skipped_videos: int = 0
     cancelled: bool = False
+    unreachable: list[Path] = field(default_factory=list)
+    """Source folders that are not there, such as on a disk that is not connected."""
+    destination_unreachable: bool = False
 
 
 @dataclass(slots=True)
@@ -88,11 +94,36 @@ class Library:
     ) -> Project:
         if not source_paths:
             raise ValueError("A project needs at least one source folder")
-        target = destination or (source_paths[0] / DEFAULT_DESTINATION_NAME)
+        paths = _unique_folders(source_paths)
+        target = destination or (paths[0] / DEFAULT_DESTINATION_NAME)
         project = self.projects.create(name=name, destination=target, settings=settings)
-        for index, path in enumerate(source_paths):
+        for index, path in enumerate(paths):
             self.sources.add(project.id, path, label=path.name or str(path), sort_order=index)
         return project
+
+    def set_sources(self, project_id: int, paths: Sequence[Path]) -> tuple[Source, ...]:
+        """Makes the project read exactly these folders; returns the folders it dropped.
+
+        A dropped folder takes its photos, their selection records and its camera offsets
+        with it. Nothing on disk changes: copies already in the destination stay, and
+        `reconcile` only matches a copy to a photo whose size it has.
+        """
+        if not paths:
+            raise ValueError("A project needs at least one source folder")
+        current = self.sources.list(project_id)
+        wanted = {folder_key(path) for path in paths}
+        dropped = tuple(source for source in current if folder_key(source.path) not in wanted)
+        for source in dropped:
+            self.sources.remove(source.id)
+        known = {folder_key(source.path) for source in current}
+        order = max((source.sort_order for source in current), default=-1) + 1
+        for path in _unique_folders(paths):
+            if folder_key(path) in known:
+                continue
+            self.sources.add(project_id, path, label=path.name or str(path), sort_order=order)
+            known.add(folder_key(path))
+            order += 1
+        return dropped
 
     def open_project(
         self,
@@ -118,10 +149,12 @@ class Library:
             summary.missing += source_summary.missing
             summary.skipped_videos += source_summary.skipped_videos
             summary.cancelled = summary.cancelled or source_summary.cancelled
+            if not source.path.is_dir() or volume_missing(source.path):
+                summary.unreachable.append(source.path)
 
         state = self.load_state(project_id)
         state.scan = summary
-        self.reconcile_state(state)
+        summary.destination_unreachable = self.reconcile_state(state).unreachable
         state.cursor = self._restore_cursor(state, project.cursor_photo_id)
         return state
 
@@ -207,11 +240,6 @@ class Library:
             state.selections[photo_id] = self.selections.add(
                 photo_id, state.project.id, written_name, written_by_app=False
             )
-        for photo_id in result.adopted_from_sidecar:
-            index = state.index_of(photo_id)
-            if index is None:
-                continue
-            self.select(state, index)
         return result
 
     def select(self, state: ProjectState, index: int) -> Selection:
@@ -231,21 +259,29 @@ class Library:
         if record is None:
             return
         writer = selection_ops.DestinationWriter(state.project.destination, state.project.settings)
-        writer.deselect(entry, record)
+        others = {
+            name: photo_id
+            for name, photo_id in selection_ops.reserved_names(state.selections.values()).items()
+            if photo_id != entry.photo.id
+        }
+        writer.deselect(entry, record, others)
         self.selections.remove(entry.photo.id)
         state.selections.pop(entry.photo.id, None)
 
-    def set_offset(self, state: ProjectState, source_id: int, time_offset_s: int) -> ProjectState:
-        self.sources.set_offset(source_id, time_offset_s)
+    def set_offset(
+        self,
+        state: ProjectState,
+        source_id: int,
+        time_offset_s: int,
+        camera: str | None = None,
+    ) -> ProjectState:
+        """Sets one camera's offset in a folder, or with `camera` None the folder's default."""
+        if camera is None:
+            self.sources.set_offset(source_id, time_offset_s)
+        else:
+            self.sources.set_camera_offset(source_id, camera_key(camera), time_offset_s)
         state.sources = tuple(
-            Source(
-                id=source.id,
-                project_id=source.project_id,
-                path=source.path,
-                label=source.label,
-                time_offset_s=time_offset_s if source.id == source_id else source.time_offset_s,
-                sort_order=source.sort_order,
-            )
+            _with_offset(source, time_offset_s, camera) if source.id == source_id else source
             for source in state.sources
         )
         current = state.current
@@ -335,6 +371,76 @@ class Library:
             return index
         nearest = surviving[ordering.nearest_index(surviving, state.entries[index].effective_at)]
         return state.index_of(nearest.photo.id) or 0
+
+
+@dataclass(frozen=True, slots=True)
+class Clock:
+    """One camera within one source folder: what a time offset applies to."""
+
+    source: Source
+    camera: str
+    photos: int
+
+    @property
+    def key(self) -> tuple[int, str]:
+        return (self.source.id, self.camera)
+
+    @property
+    def offset(self) -> int:
+        return self.source.offset_for(self.camera)
+
+
+def clocks(entries: Iterable[TimelineEntry], sources: Sequence[Source]) -> tuple[Clock, ...]:
+    """Every camera per folder, folders in their order, the busiest camera first."""
+    counts: Counter[tuple[int, str]] = Counter(entry.clock for entry in entries)
+    result: list[Clock] = []
+    for source in sources:
+        cameras = sorted(
+            (
+                (camera, total)
+                for (source_id, camera), total in counts.items()
+                if source_id == source.id
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
+        result.extend(
+            Clock(source=source, camera=camera, photos=total) for camera, total in cameras
+        )
+    return tuple(result)
+
+
+def folder_key(path: Path | str) -> str:
+    """One key per folder on disk, so the same folder is never added twice.
+
+    A folder that is there is known by its device and file number, which sees through
+    `C:/x` versus `C:\\x`, letter case on macOS and Windows, symlinks and junctions.
+    One that is not there (an unplugged disk) falls back to its normalised path.
+    """
+    text = os.path.normcase(os.path.normpath(str(path)))
+    try:
+        info = os.stat(text)
+    except OSError:
+        return text
+    if info.st_ino == 0:  # some network file systems have no file numbers
+        return text
+    return f"@{info.st_dev}:{info.st_ino}"
+
+
+def _unique_folders(paths: Iterable[Path]) -> list[Path]:
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in paths:
+        key = folder_key(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(Path(path))
+    return unique
+
+
+def _with_offset(source: Source, offset: int, camera: str | None) -> Source:
+    if camera is None:
+        return replace(source, time_offset_s=offset)
+    return source.with_camera_offset(camera, offset)
 
 
 def derive_label(source: Source, photos: Iterable[Photo]) -> str:
