@@ -190,8 +190,19 @@ def test_reconcile_is_stable_when_nothing_changed(
     assert not result.changed
 
 
-def test_writer_needs_no_existing_destination(tmp_path: Path) -> None:
-    writer = DestinationWriter(tmp_path / "deep" / "out", ProjectSettings())
+def test_writer_creates_the_destination_folder(tmp_path: Path) -> None:
+    writer = DestinationWriter(tmp_path / "out", ProjectSettings())
     writer.ensure_destination()
 
-    assert (tmp_path / "deep" / "out").is_dir()
+    assert (tmp_path / "out").is_dir()
+
+
+def test_writer_never_builds_a_path_on_a_missing_disk(tmp_path: Path) -> None:
+    """An unplugged USB disk's mount point must not get a folder tree on the internal disk."""
+    from fotozeef.core.selection import SelectionError
+
+    writer = DestinationWriter(tmp_path / "usb" / "Vakantie" / "selectie", ProjectSettings())
+
+    with pytest.raises(SelectionError):
+        writer.ensure_destination()
+    assert not (tmp_path / "usb").exists()

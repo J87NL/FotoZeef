@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QPersistentModelIndex,
+    QSize,
     QSortFilterProxyModel,
     Qt,
+    QTimer,
     Signal,
 )
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -18,9 +22,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from fotozeef.core.models import TimelineEntry
 from fotozeef.ui.filmstrip import SELECTED_ROLE, FilmstripDelegate, FilmstripModel
 
 GRID_SPACING = 4
+TILE_WIDTHS = (100, 130, 160, 210, 270, 340, 420)
+"""Tile widths per zoom step; tiles are 4:3 landscape."""
+DEFAULT_ZOOM = 2
+
+PixmapProvider = Callable[[TimelineEntry, QSize], QPixmap | None]
+
+
+def tile_size(zoom: int) -> QSize:
+    width = TILE_WIDTHS[min(max(zoom, 0), len(TILE_WIDTHS) - 1)]
+    return QSize(width, round(width * 0.8))
 
 
 class SelectedOnly(QSortFilterProxyModel):
@@ -59,11 +74,22 @@ class OverviewGrid(QListView):
     open_requested = Signal(int)
     toggle_requested = Signal(int)
     close_requested = Signal()
+    zoom_requested = Signal(int)
+    """+1 for larger tiles, -1 for smaller ones (Ctrl and the mouse wheel)."""
 
-    def __init__(self, model: SelectedOnly, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        model: SelectedOnly,
+        parent: QWidget | None = None,
+        pixmap: PixmapProvider | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setModel(model)
-        self.setItemDelegate(FilmstripDelegate(self))
+        self._provider = pixmap
+        self._delegate = FilmstripDelegate(
+            self, tile_size(DEFAULT_ZOOM), self._pixmap if pixmap else None
+        )
+        self.setItemDelegate(self._delegate)
         self.setViewMode(QListView.ViewMode.ListMode)
         self.setFlow(QListView.Flow.LeftToRight)
         self.setWrapping(True)
@@ -77,6 +103,35 @@ class OverviewGrid(QListView):
         # One click opens; Enter is handled in keyPressEvent. `activated` would fire
         # a second time on platforms where a single click activates.
         self.clicked.connect(self._open)
+
+    def set_tile_size(self, size: QSize) -> None:
+        """Re-lays the grid at a new tile size, keeping the current photo in view."""
+        self._delegate.set_size(size)
+        self.scheduleDelayedItemsLayout()
+        self.viewport().update()
+        # The new layout is only there once the event loop has run.
+        QTimer.singleShot(0, self._center_current)
+
+    def _center_current(self) -> None:
+        if self.currentIndex().isValid():
+            self.scrollTo(self.currentIndex(), QListView.ScrollHint.PositionAtCenter)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta:
+                self.zoom_requested.emit(1 if delta > 0 else -1)
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    def _pixmap(self, index: QModelIndex | QPersistentModelIndex, size: QSize) -> QPixmap | None:
+        model = self.model()
+        assert isinstance(model, SelectedOnly)
+        source = model.sourceModel()
+        assert isinstance(source, FilmstripModel) and self._provider is not None
+        entry = source.entry(model.mapToSource(model.index(index.row(), 0)).row())
+        return self._provider(entry, size) if entry is not None else None
 
     def source_row(self, index: QModelIndex | QPersistentModelIndex) -> int:
         model = self.model()
@@ -118,12 +173,23 @@ class OverviewGrid(QListView):
 class OverviewPage(QWidget):
     """The grid with a short header: how many photos, and the selected-only filter."""
 
-    def __init__(self, model: FilmstripModel, parent: QWidget | None = None) -> None:
+    zoom_changed = Signal(int)
+
+    def __init__(
+        self,
+        model: FilmstripModel,
+        parent: QWidget | None = None,
+        pixmap: PixmapProvider | None = None,
+        zoom: int = DEFAULT_ZOOM,
+    ) -> None:
         super().__init__(parent)
         self._model = model
         self._proxy = SelectedOnly(self)
         self._proxy.setSourceModel(model)
-        self.grid = OverviewGrid(self._proxy, self)
+        self.grid = OverviewGrid(self._proxy, self, pixmap)
+        self.grid.zoom_requested.connect(self.zoom_by)
+        self._zoom = DEFAULT_ZOOM
+        self.set_zoom(zoom)
 
         self._summary = QLabel(self)
         self._only_selected = QCheckBox(self.tr("Only selected photos"), self)
@@ -149,6 +215,18 @@ class OverviewPage(QWidget):
         self.retranslate()
 
     @property
+    def zoom(self) -> int:
+        return self._zoom
+
+    def set_zoom(self, zoom: int) -> None:
+        self._zoom = min(max(zoom, 0), len(TILE_WIDTHS) - 1)
+        self.grid.set_tile_size(tile_size(self._zoom))
+        self.zoom_changed.emit(self._zoom)
+
+    def zoom_by(self, steps: int) -> None:
+        self.set_zoom(self._zoom + steps)
+
+    @property
     def only_selected(self) -> bool:
         return self._only_selected.isChecked()
 
@@ -161,7 +239,10 @@ class OverviewPage(QWidget):
     def retranslate(self) -> None:
         self._only_selected.setText(self.tr("Only selected photos"))
         self._hint.setText(
-            self.tr("Click or Enter opens a photo · Space selects · G or Esc returns")
+            self.tr(
+                "Click or Enter opens a photo · Space selects · Ctrl+scroll or Ctrl +/- zooms"
+                " · G or Esc returns"
+            )
         )
 
     def _filter(self, only: bool) -> None:

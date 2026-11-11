@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap
 from fotozeef.core.models import TimelineEntry
 from fotozeef.core.thumbnails import (
     FILMSTRIP_SIZE,
+    GRID_SIZE,
     PREVIEW_SIZE,
     ThumbnailCache,
     ThumbnailRequest,
@@ -16,6 +17,7 @@ from fotozeef.core.thumbnails import (
 )
 
 _FILMSTRIP_CACHE_ENTRIES = 900
+_GRID_CACHE_ENTRIES = 240
 _PREVIEW_CACHE_ENTRIES = 16
 _SCALED_CACHE_ENTRIES = 600
 
@@ -48,6 +50,11 @@ class ThumbnailService(QObject):
     @property
     def filmstrip_target(self) -> int:
         return int(FILMSTRIP_SIZE * self._scale)
+
+    @property
+    def grid_target(self) -> int:
+        """Sharp enough for the overview's larger tiles, far cheaper than a preview."""
+        return int(GRID_SIZE * self._scale)
 
     @property
     def preview_target(self) -> int:
@@ -139,8 +146,12 @@ class ThumbnailService(QObject):
         return pixmap
 
     def _trim(self, target: int) -> None:
-        is_preview = target >= self.preview_target
-        limit = _PREVIEW_CACHE_ENTRIES if is_preview else _FILMSTRIP_CACHE_ENTRIES
+        if target >= self.preview_target:
+            limit = _PREVIEW_CACHE_ENTRIES
+        elif target >= self.grid_target:
+            limit = _GRID_CACHE_ENTRIES
+        else:
+            limit = _FILMSTRIP_CACHE_ENTRIES
         same_target = [key for key in self._pixmaps if key[1] == target]
         while len(same_target) > limit:
             self._pixmaps.pop(same_target.pop(0), None)

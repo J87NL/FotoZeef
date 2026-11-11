@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -28,16 +28,16 @@ from PySide6.QtWidgets import (
 )
 
 from fotozeef.appinfo import APP_NAME
-from fotozeef.core.library import Library, ProjectState, clocks
+from fotozeef.core.library import Library, ProjectState, clocks, folder_key
 from fotozeef.core.models import Source, TimelineEntry
 from fotozeef.core.slideshow import PhotoScope, SlideOrder, SlideshowSettings, start_position
-from fotozeef.core.thumbnails import ThumbnailCache
+from fotozeef.core.thumbnails import FILMSTRIP_SIZE, ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
 from fotozeef.ui.filmstrip import Filmstrip, FilmstripModel
 from fotozeef.ui.full_image import FullImageLoader
 from fotozeef.ui.offset_dialog import OffsetDialog
 from fotozeef.ui.open_dialog import OpenProjectDialog
-from fotozeef.ui.overview import OverviewPage
+from fotozeef.ui.overview import DEFAULT_ZOOM, OverviewPage
 from fotozeef.ui.project_dialog import ProjectDialog
 from fotozeef.ui.settings_dialog import SettingsDialog
 from fotozeef.ui.slideshow_dialog import SlideshowDialog
@@ -83,7 +83,10 @@ class MainWindow(QMainWindow):
         self._full: tuple[int, QPixmap] | None = None
 
         culling = QWidget(self)
-        self._overview = OverviewPage(self._model, culling)
+        self._overview = OverviewPage(
+            self._model, culling, pixmap=self._overview_pixmap, zoom=_saved_overview_zoom()
+        )
+        self._overview.zoom_changed.connect(_save_overview_zoom)
         self._overview.grid.open_requested.connect(self._open_from_overview)
         self._overview.grid.toggle_requested.connect(self._toggle_from_overview)
         self._overview.grid.close_requested.connect(self.hide_overview)
@@ -117,6 +120,7 @@ class MainWindow(QMainWindow):
         self._opener.progress.connect(self._on_scan_progress)
 
         self._slideshow: SlideshowWindow | None = None
+        self._notice: QMessageBox | None = None
         self._actions: list[QAction] = []
         self._preparer = SlideshowPreparer(self)
         self._preparer.prepared.connect(self._on_slideshow_prepared)
@@ -225,11 +229,9 @@ class MainWindow(QMainWindow):
             return
         if dialog.destination != project.destination and not self._confirm_move():
             return
-        kept = {str(path) for path in dialog.source_paths}
-        dropped = [source for source in sources if str(source.path) not in kept]
-        if dropped and not self._confirm_drop_sources(
-            dropped, self._library.copies_from(project_id, (source.id for source in dropped))
-        ):
+        kept = {folder_key(path) for path in dialog.source_paths}
+        dropped = [source for source in sources if folder_key(source.path) not in kept]
+        if dropped and not self._confirm_drop_sources(dropped):
             return
         if dialog.name:
             self._library.projects.rename(project_id, dialog.name)
@@ -241,16 +243,15 @@ class MainWindow(QMainWindow):
         else:
             self._refresh_start_screen()
 
-    def _confirm_drop_sources(self, dropped: Sequence[Source], copies: int) -> bool:
+    def _confirm_drop_sources(self, dropped: Sequence[Source]) -> bool:
         folders = "\n".join(str(source.path) for source in dropped)
         text = self.tr(
             "These folders leave the project, with their photos and time offsets:\n\n{0}"
         ).format(folders)
-        if copies:
-            text += "\n\n" + self.tr(
-                "Their {0} selected photos are taken out of the destination folder too."
-            ).format(copies)
-        text += "\n\n" + self.tr("The originals stay on disk. Continue?")
+        text += "\n\n" + self.tr(
+            "Nothing is deleted from disk: the originals stay, and so do copies already in"
+            " the selection folder. Continue?"
+        )
         answer = QMessageBox.question(
             self,
             APP_NAME,
@@ -383,6 +384,14 @@ class MainWindow(QMainWindow):
         self._filmstrip.setVisible(not self._fullscreen)
         self.setFocus()
 
+    def _overview_pixmap(self, entry: TimelineEntry, size: QSize) -> QPixmap | None:
+        """Large tiles use the sharper grid thumbnail, the filmstrip one until it is ready."""
+        if max(size.width(), size.height()) > FILMSTRIP_SIZE:
+            sharp = self._service.scaled_pixmap(entry, self._service.grid_target, size)
+            if sharp is not None:
+                return sharp
+        return self._service.scaled_pixmap(entry, self._service.filmstrip_target, size)
+
     def _open_from_overview(self, row: int) -> None:
         self.hide_overview()
         self._set_cursor(row)
@@ -501,13 +510,23 @@ class MainWindow(QMainWindow):
         self._selection_queue.submit(photo_id, False, lambda: self._library.deselect(state, index))
 
     def zoom_in(self) -> None:
-        self._viewer.zoom_in()
+        """Larger overview tiles while the overview is shown, otherwise a closer photo."""
+        if self.overview_shown:
+            self._overview.zoom_by(1)
+        else:
+            self._viewer.zoom_in()
 
     def zoom_out(self) -> None:
-        self._viewer.zoom_out()
+        if self.overview_shown:
+            self._overview.zoom_by(-1)
+        else:
+            self._viewer.zoom_out()
 
     def zoom_to_fit(self) -> None:
-        self._viewer.zoom_to_fit()
+        if self.overview_shown:
+            self._overview.set_zoom(DEFAULT_ZOOM)
+        else:
+            self._viewer.zoom_to_fit()
 
     def zoom_to_actual_size(self) -> None:
         self._viewer.zoom_to_actual_size()
@@ -717,6 +736,34 @@ class MainWindow(QMainWindow):
             notes.append(self.tr("{0} video files skipped").format(state.scan.skipped_videos))
         if notes:
             self.statusBar().showMessage(", ".join(notes), 6000)
+        self._report_unreachable(state)
+
+    def _report_unreachable(self, state: ProjectState) -> None:
+        """Says plainly that a folder is not there, typically an unplugged USB disk."""
+        parts: list[str] = []
+        if state.scan.unreachable:
+            folders = "\n".join(str(path) for path in state.scan.unreachable)
+            parts.append(
+                self.tr(
+                    "These folders cannot be found:\n\n{0}\n\n"
+                    "Are they on a disk that is not connected? Their photos are shown as"
+                    " missing until you connect it and open the project again."
+                ).format(folders)
+            )
+        if state.scan.destination_unreachable:
+            parts.append(
+                self.tr(
+                    "The selection folder cannot be reached:\n{0}\n\n"
+                    "Connect its disk and open the project again to select photos."
+                ).format(state.project.destination)
+            )
+        if not parts:
+            return
+        parts.append(self.tr("Your selection so far is kept."))
+        notice = QMessageBox(QMessageBox.Icon.Warning, APP_NAME, "\n\n".join(parts), parent=self)
+        notice.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._notice = notice
+        notice.open()
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()
@@ -828,7 +875,7 @@ class MainWindow(QMainWindow):
             self._render_current()
 
     def _on_thumbnail_ready(self, photo_id: int, target: int) -> None:
-        if target == self._service.filmstrip_target:
+        if target in (self._service.filmstrip_target, self._service.grid_target):
             self._model.refresh_photo(photo_id)
             return
         state = self._state
@@ -890,6 +937,21 @@ class MainWindow(QMainWindow):
                 position, total, len(self._selected), zoom, destination
             )
         )
+
+
+_OVERVIEW_ZOOM_KEY = "overview/zoom"
+
+
+def _saved_overview_zoom() -> int:
+    value = QSettings().value(_OVERVIEW_ZOOM_KEY, DEFAULT_ZOOM)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ZOOM
+
+
+def _save_overview_zoom(zoom: int) -> None:
+    QSettings().setValue(_OVERVIEW_ZOOM_KEY, zoom)
 
 
 def _short_path(path: Path) -> str:

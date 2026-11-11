@@ -185,7 +185,7 @@ Installeer de nieuwste versie via de releasespagina om ze te openen. Er is niets
 <context>
     <name>MainWindow</name>
     <message>
-        <location filename="../../ui/main_window.py" line="247"/>
+        <location filename="../../ui/main_window.py" line="249"/>
         <source>These folders leave the project, with their photos and time offsets:
 
 {0}</source>
@@ -194,17 +194,7 @@ Installeer de nieuwste versie via de releasespagina om ze te openen. Er is niets
 {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="251"/>
-        <source>Their {0} selected photos are taken out of the destination folder too.</source>
-        <translation>Hun {0} geselecteerde foto&apos;s worden ook uit de bestemmingsmap gehaald.</translation>
-    </message>
-    <message>
-        <location filename="../../ui/main_window.py" line="253"/>
-        <source>The originals stay on disk. Continue?</source>
-        <translation>De originelen blijven op de schijf staan. Doorgaan?</translation>
-    </message>
-    <message>
-        <location filename="../../ui/main_window.py" line="287"/>
+        <location filename="../../ui/main_window.py" line="288"/>
         <source>The selection is read back from the destination folder, so pointing the project at a different folder starts from whatever is already in there.
 
 Photos already copied stay where they are. Continue?</source>
@@ -213,160 +203,165 @@ Photos already copied stay where they are. Continue?</source>
 Al gekopieerde foto&apos;s blijven staan waar ze staan. Doorgaan?</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="327"/>
+        <location filename="../../ui/main_window.py" line="328"/>
         <source>Time reference: {0}</source>
         <translation>Tijdreferentie: {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="340"/>
+        <location filename="../../ui/main_window.py" line="341"/>
         <source>Esc or F to leave fullscreen</source>
         <translation>Esc of F om het volledige scherm te verlaten</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="399"/>
+        <location filename="../../ui/main_window.py" line="408"/>
         <source>Still stopping the previous preparation…</source>
         <translation>De vorige voorbereiding wordt nog gestopt…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="428"/>
+        <location filename="../../ui/main_window.py" line="437"/>
         <source>Preparing the slideshow…</source>
         <translation>Diavoorstelling voorbereiden…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="448"/>
+        <location filename="../../ui/main_window.py" line="457"/>
         <source>No photos are selected yet.</source>
         <translation>Er zijn nog geen foto&apos;s geselecteerd.</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="450"/>
+        <location filename="../../ui/main_window.py" line="459"/>
         <source>There are no photos to show.</source>
         <translation>Er zijn geen foto&apos;s om te tonen.</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="473"/>
+        <location filename="../../ui/main_window.py" line="482"/>
         <source>Could not start the slideshow:
 {0}</source>
         <translation>Kan de diavoorstelling niet starten:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="492"/>
+        <location filename="../../ui/main_window.py" line="501"/>
         <source>That file is missing from its source folder</source>
         <translation>Dat bestand ontbreekt in de bronmap</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="582"/>
+        <location filename="../../ui/main_window.py" line="601"/>
         <source>&amp;Project</source>
         <translation>&amp;Project</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="583"/>
+        <location filename="../../ui/main_window.py" line="602"/>
         <source>&amp;New project…</source>
         <translation>&amp;Nieuw project…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="584"/>
+        <location filename="../../ui/main_window.py" line="603"/>
         <source>&amp;Open project…</source>
         <translation>Project &amp;openen…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="585"/>
+        <location filename="../../ui/main_window.py" line="604"/>
         <source>&amp;Close project</source>
         <translation>Project &amp;sluiten</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="587"/>
+        <location filename="../../ui/main_window.py" line="606"/>
         <source>&amp;Settings…</source>
         <translation>&amp;Instellingen…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="589"/>
+        <location filename="../../ui/main_window.py" line="608"/>
         <source>&amp;Quit</source>
         <translation>&amp;Afsluiten</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="591"/>
+        <location filename="../../ui/main_window.py" line="610"/>
         <source>&amp;Timeline</source>
         <translation>&amp;Tijdlijn</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="592"/>
+        <location filename="../../ui/main_window.py" line="611"/>
         <source>Set time &amp;reference</source>
         <translation>Tijd&amp;referentie instellen</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="593"/>
+        <location filename="../../ui/main_window.py" line="612"/>
         <source>Time &amp;offsets…</source>
         <translation>Tijd&amp;correcties…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="595"/>
+        <location filename="../../ui/main_window.py" line="614"/>
         <source>&amp;View</source>
         <translation>&amp;Beeld</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="596"/>
+        <location filename="../../ui/main_window.py" line="615"/>
         <source>&amp;Fullscreen</source>
         <translation>&amp;Volledig scherm</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="597"/>
+        <location filename="../../ui/main_window.py" line="616"/>
         <source>&amp;Overview of all photos</source>
         <translation>&amp;Overzicht van alle foto&apos;s</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="598"/>
+        <location filename="../../ui/main_window.py" line="617"/>
         <source>&amp;Slideshow…</source>
         <translation>&amp;Diavoorstelling…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="600"/>
+        <location filename="../../ui/main_window.py" line="619"/>
         <source>Zoom &amp;in</source>
         <translation>In&amp;zoomen</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="601"/>
+        <location filename="../../ui/main_window.py" line="620"/>
         <source>Zoom &amp;out</source>
         <translation>&amp;Uitzoomen</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="602"/>
+        <location filename="../../ui/main_window.py" line="621"/>
         <source>&amp;Fit to window</source>
         <translation>&amp;Passend in venster</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="603"/>
+        <location filename="../../ui/main_window.py" line="622"/>
         <source>&amp;Actual size</source>
         <translation>&amp;Werkelijke grootte</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="605"/>
+        <location filename="../../ui/main_window.py" line="624"/>
         <source>&amp;Language</source>
         <translation>&amp;Taal</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="607"/>
+        <location filename="../../ui/main_window.py" line="626"/>
         <source>&amp;Help</source>
         <translation>&amp;Help</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="608"/>
+        <location filename="../../ui/main_window.py" line="627"/>
         <source>&amp;About {0}</source>
         <translation>&amp;Over {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="674"/>
+        <location filename="../../ui/main_window.py" line="693"/>
         <source>Scanning…</source>
         <translation>Bezig met scannen…</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="428"/>
-        <location filename="../../ui/main_window.py" line="674"/>
+        <location filename="../../ui/main_window.py" line="437"/>
+        <location filename="../../ui/main_window.py" line="693"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="272"/>
+        <location filename="../../ui/main_window.py" line="252"/>
+        <source>Nothing is deleted from disk: the originals stay, and so do copies already in the selection folder. Continue?</source>
+        <translation>Er wordt niets van de schijf verwijderd: de originelen blijven staan, en kopieën die al in de selectiemap staan ook. Doorgaan?</translation>
+    </message>
+    <message>
+        <location filename="../../ui/main_window.py" line="273"/>
         <source>Remove “{0}” from FotoZeef?
 
 Only the project goes: your photos, their folders and the selection folder stay on disk as they are.</source>
@@ -375,76 +370,105 @@ Only the project goes: your photos, their folders and the selection folder stay 
 Alleen het project verdwijnt: je foto&apos;s, hun mappen en de selectiemap blijven op de schijf zoals ze zijn.</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="683"/>
+        <location filename="../../ui/main_window.py" line="702"/>
         <source>Scanning {0}: {1} photos</source>
         <translation>{0} scannen: {1} foto&apos;s</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="708"/>
+        <location filename="../../ui/main_window.py" line="727"/>
         <source>Scan cancelled; showing what was found so far</source>
         <translation>Scan geannuleerd; dit is wat er tot nu toe gevonden is</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="713"/>
+        <location filename="../../ui/main_window.py" line="732"/>
         <source>{0} new</source>
         <translation>{0} nieuw</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="715"/>
+        <location filename="../../ui/main_window.py" line="734"/>
         <source>{0} missing</source>
         <translation>{0} ontbreekt</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="717"/>
+        <location filename="../../ui/main_window.py" line="736"/>
         <source>{0} video files skipped</source>
         <translation>{0} videobestanden overgeslagen</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="724"/>
+        <location filename="../../ui/main_window.py" line="748"/>
+        <source>These folders cannot be found:
+
+{0}
+
+Are they on a disk that is not connected? Their photos are shown as missing until you connect it and open the project again.</source>
+        <translation>Deze mappen zijn niet gevonden:
+
+{0}
+
+Staan ze op een schijf die niet is aangesloten? Hun foto&apos;s worden als ontbrekend getoond tot je de schijf aansluit en het project opnieuw opent.</translation>
+    </message>
+    <message>
+        <location filename="../../ui/main_window.py" line="756"/>
+        <source>The selection folder cannot be reached:
+{0}
+
+Connect its disk and open the project again to select photos.</source>
+        <translation>De selectiemap is niet bereikbaar:
+{0}
+
+Sluit de schijf aan en open het project opnieuw om foto&apos;s te selecteren.</translation>
+    </message>
+    <message>
+        <location filename="../../ui/main_window.py" line="762"/>
+        <source>Your selection so far is kept.</source>
+        <translation>Je selectie tot nu toe blijft bewaard.</translation>
+    </message>
+    <message>
+        <location filename="../../ui/main_window.py" line="771"/>
         <source>Could not open the project:
 {0}</source>
         <translation>Kon het project niet openen:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="780"/>
+        <location filename="../../ui/main_window.py" line="827"/>
         <source>Could not load this photo at full size: {0}</source>
         <translation>Kon deze foto niet op volledige grootte laden: {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="788"/>
+        <location filename="../../ui/main_window.py" line="835"/>
         <source>This project has no photos yet</source>
         <translation>Dit project bevat nog geen foto&apos;s</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="790"/>
+        <location filename="../../ui/main_window.py" line="837"/>
         <source>Open or create a project to start culling</source>
         <translation>Open of maak een project om te beginnen met schiften</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="812"/>
+        <location filename="../../ui/main_window.py" line="859"/>
         <source>This file is missing from its source folder</source>
         <translation>Dit bestand ontbreekt in de bronmap</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="813"/>
+        <location filename="../../ui/main_window.py" line="860"/>
         <source>This file could not be read</source>
         <translation>Dit bestand kon niet gelezen worden</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="855"/>
+        <location filename="../../ui/main_window.py" line="902"/>
         <source>Could not copy the photo:
 {0}</source>
         <translation>Kon de foto niet kopiëren:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="881"/>
+        <location filename="../../ui/main_window.py" line="928"/>
         <source>No project open</source>
         <translation>Geen project geopend</translation>
     </message>
     <message>
-        <location filename="../../ui/main_window.py" line="889"/>
+        <location filename="../../ui/main_window.py" line="936"/>
         <source>{0}/{1}    {2} selected{3}    → {4}</source>
         <translation>{0}/{1}    {2} geselecteerd{3}    → {4}</translation>
     </message>
@@ -528,20 +552,20 @@ Alleen het project verdwijnt: je foto&apos;s, hun mappen en de selectiemap blijv
 <context>
     <name>OverviewPage</name>
     <message>
-        <location filename="../../ui/overview.py" line="129"/>
-        <location filename="../../ui/overview.py" line="162"/>
+        <location filename="../../ui/overview.py" line="195"/>
+        <location filename="../../ui/overview.py" line="240"/>
         <source>Only selected photos</source>
         <translation>Alleen geselecteerde foto&apos;s</translation>
     </message>
     <message>
-        <location filename="../../ui/overview.py" line="159"/>
+        <location filename="../../ui/overview.py" line="237"/>
         <source>{0} photos, {1} selected</source>
         <translation>{0} foto&apos;s, {1} geselecteerd</translation>
     </message>
     <message>
-        <location filename="../../ui/overview.py" line="164"/>
-        <source>Click or Enter opens a photo · Space selects · G or Esc returns</source>
-        <translation>Klik of Enter opent een foto · Spatie selecteert · G of Esc gaat terug</translation>
+        <location filename="../../ui/overview.py" line="243"/>
+        <source>Click or Enter opens a photo · Space selects · Ctrl+scroll or Ctrl +/- zooms · G or Esc returns</source>
+        <translation>Klik of Enter opent een foto · Spatie selecteert · Ctrl+scrollen of Ctrl +/- zoomt · G of Esc gaat terug</translation>
     </message>
 </context>
 <context>

@@ -255,34 +255,35 @@ def test_the_settings_menu_item_opens_the_settings_of_the_open_project(
     assert shown == [1], "the real menu action must reach the dialog"
 
 
-def test_dropping_a_folder_takes_its_copies_out_of_the_destination(
+def test_a_dropped_folders_copy_is_never_handed_to_another_photo(
     tmp_path: Path, library: Library, jpeg_factory
 ) -> None:
     first = tmp_path / "a"
     second = tmp_path / "b"
-    jpeg_factory(first / "IMG_0001.JPG", captured_at=datetime(2024, 1, 1, 9))
-    jpeg_factory(second / "IMG_0001.JPG", captured_at=datetime(2024, 1, 1, 10))
+    jpeg_factory(first / "IMG_0001.JPG", captured_at=datetime(2024, 1, 1, 9), size=(64, 48))
+    jpeg_factory(
+        second / "IMG_0001.JPG",
+        captured_at=datetime(2024, 1, 1, 10),
+        size=(96, 64),
+        color=(10, 200, 90),
+    )
     destination = tmp_path / "out"
     project = library.create_project("two", [first, second], destination, ProjectSettings())
     state = library.open_project(project.id)
     library.select(state, 0)
-    assert library.copies_from(project.id, [state.sources[0].id]) == 1
 
     library.set_sources(project.id, [second])
 
-    assert not (destination / "IMG_0001.JPG").exists()
+    assert (destination / "IMG_0001.JPG").is_file(), "nothing is deleted from disk"
     reopened = library.open_project(project.id)
-    assert reopened.selections == {}, "the other folder's IMG_0001 must not inherit it"
-    assert library.selections.list(project.id) == ()
+    assert reopened.selections == {}, "b's IMG_0001 is a different photo"
 
 
-def test_the_drop_confirmation_says_how_many_copies_go(
+def test_dropping_a_folder_says_nothing_is_deleted(
     window: MainWindow, library: Library, shoot, monkeypatch
 ) -> None:
     project, first, second = shoot
     library.set_sources(project.id, [first, second])
-    state = library.open_project(project.id)
-    library.select(state, 0)
     asked: list[str] = []
 
     def edit(dialog: SettingsDialog) -> int:
@@ -298,8 +299,7 @@ def test_the_drop_confirmation_says_how_many_copies_go(
     monkeypatch.setattr(QMessageBox, "question", refuse)
     window.edit_project_settings(project.id)
 
-    assert "1" in asked[0].split(str(first))[1]
-    assert (first.parent / "out" / "a.jpg").is_file(), "cancel leaves the copy alone"
+    assert "Nothing is deleted" in asked[0]
 
 
 def test_the_same_folder_is_never_added_twice(

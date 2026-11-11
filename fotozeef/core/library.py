@@ -42,6 +42,9 @@ class ScanSummary:
     missing: int = 0
     skipped_videos: int = 0
     cancelled: bool = False
+    unreachable: list[Path] = field(default_factory=list)
+    """Source folders that are not there, such as on a disk that is not connected."""
+    destination_unreachable: bool = False
 
 
 @dataclass(slots=True)
@@ -101,16 +104,14 @@ class Library:
         """Makes the project read exactly these folders; returns the folders it dropped.
 
         A dropped folder takes its photos, their selection records and its camera offsets
-        with it. The copies this app wrote for its selected photos are removed from the
-        destination too: left there, the next open would hand them to a photo with the
-        same name in another folder.
+        with it. Nothing on disk changes: copies already in the destination stay, and
+        `reconcile` only matches a copy to a photo whose size it has.
         """
         if not paths:
             raise ValueError("A project needs at least one source folder")
         current = self.sources.list(project_id)
         wanted = {folder_key(path) for path in paths}
         dropped = tuple(source for source in current if folder_key(source.path) not in wanted)
-        self._remove_copies(project_id, {source.id for source in dropped})
         for source in dropped:
             self.sources.remove(source.id)
         known = {folder_key(source.path) for source in current}
@@ -122,32 +123,6 @@ class Library:
             known.add(folder_key(path))
             order += 1
         return dropped
-
-    def copies_from(self, project_id: int, source_ids: Iterable[int]) -> int:
-        """How many destination copies this app wrote for photos in these folders."""
-        state = self.load_state(project_id)
-        wanted = set(source_ids)
-        return sum(
-            1
-            for entry in state.entries
-            if entry.source.id in wanted
-            and (record := state.selections.get(entry.photo.id)) is not None
-            and record.written_by_app
-        )
-
-    def _remove_copies(self, project_id: int, source_ids: set[int]) -> None:
-        if not source_ids:
-            return
-        state = self.load_state(project_id)
-        writer = selection_ops.DestinationWriter(state.project.destination, state.project.settings)
-        for entry in state.entries:
-            record = state.selections.get(entry.photo.id)
-            if entry.source.id not in source_ids or record is None or not record.written_by_app:
-                continue
-            try:
-                writer.deselect(entry, record)
-            except OSError:
-                _log.warning("could not remove %s from the destination", record.written_name)
 
     def open_project(
         self,
@@ -173,10 +148,12 @@ class Library:
             summary.missing += source_summary.missing
             summary.skipped_videos += source_summary.skipped_videos
             summary.cancelled = summary.cancelled or source_summary.cancelled
+            if not source.path.is_dir():
+                summary.unreachable.append(source.path)
 
         state = self.load_state(project_id)
         state.scan = summary
-        self.reconcile_state(state)
+        summary.destination_unreachable = self.reconcile_state(state).unreachable
         state.cursor = self._restore_cursor(state, project.cursor_photo_id)
         return state
 
@@ -281,7 +258,12 @@ class Library:
         if record is None:
             return
         writer = selection_ops.DestinationWriter(state.project.destination, state.project.settings)
-        writer.deselect(entry, record)
+        others = {
+            name: photo_id
+            for name, photo_id in selection_ops.reserved_names(state.selections.values()).items()
+            if photo_id != entry.photo.id
+        }
+        writer.deselect(entry, record, others)
         self.selections.remove(entry.photo.id)
         state.selections.pop(entry.photo.id, None)
 
@@ -427,8 +409,20 @@ def clocks(entries: Iterable[TimelineEntry], sources: Sequence[Source]) -> tuple
 
 
 def folder_key(path: Path | str) -> str:
-    """Compares folders the way the file system does: `C:/x` and `C:\\x` are one folder."""
-    return os.path.normcase(os.path.normpath(str(path)))
+    """One key per folder on disk, so the same folder is never added twice.
+
+    A folder that is there is known by its device and file number, which sees through
+    `C:/x` versus `C:\\x`, letter case on macOS and Windows, symlinks and junctions.
+    One that is not there (an unplugged disk) falls back to its normalised path.
+    """
+    text = os.path.normcase(os.path.normpath(str(path)))
+    try:
+        info = os.stat(text)
+    except OSError:
+        return text
+    if info.st_ino == 0:  # some network file systems have no file numbers
+        return text
+    return f"@{info.st_dev}:{info.st_ino}"
 
 
 def _unique_folders(paths: Iterable[Path]) -> list[Path]:

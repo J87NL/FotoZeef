@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import QApplication
 
 from fotozeef.core.library import Library
@@ -187,3 +187,129 @@ def test_opening_a_project_leaves_the_overview_and_its_filter(
 
     assert not window.overview_shown
     assert not window._overview.only_selected
+
+
+# --- zooming the grid ------------------------------------------------------------------
+
+
+def _wheel(widget, delta: int, modifiers: Qt.KeyboardModifier) -> None:
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    widget.wheelEvent(
+        QWheelEvent(
+            QPointF(10, 10),
+            QPointF(10, 10),
+            QPoint(0, 0),
+            QPoint(0, delta),
+            Qt.MouseButton.NoButton,
+            modifiers,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+    )
+
+
+def _tile_width(window: MainWindow) -> int:
+    grid = window._overview.grid
+    return grid.itemDelegate().sizeHint(None, grid.model().index(0, 0)).width()
+
+
+def test_ctrl_and_the_wheel_zoom_the_grid(window: MainWindow) -> None:
+    from fotozeef.ui.overview import DEFAULT_ZOOM, TILE_WIDTHS
+
+    window.show_overview()
+    window._overview.set_zoom(DEFAULT_ZOOM)
+    grid = window._overview.grid
+
+    _wheel(grid, 120, Qt.KeyboardModifier.ControlModifier)
+    assert _tile_width(window) == TILE_WIDTHS[DEFAULT_ZOOM + 1]
+
+    _wheel(grid, -120, Qt.KeyboardModifier.ControlModifier)
+    _wheel(grid, -120, Qt.KeyboardModifier.ControlModifier)
+    assert _tile_width(window) == TILE_WIDTHS[DEFAULT_ZOOM - 1]
+
+
+def test_a_plain_wheel_still_scrolls(window: MainWindow) -> None:
+    window.show_overview()
+    before = window._overview.zoom
+
+    _wheel(window._overview.grid, 120, Qt.KeyboardModifier.NoModifier)
+
+    assert window._overview.zoom == before
+
+
+def test_ctrl_plus_and_minus_zoom_the_grid_not_the_photo(window: MainWindow) -> None:
+    from fotozeef.ui.overview import DEFAULT_ZOOM
+
+    window.show_overview()
+    window._overview.set_zoom(DEFAULT_ZOOM)
+    zoom_in = next(
+        action
+        for action in window._actions
+        if action.shortcut() == QKeySequence(QKeySequence.StandardKey.ZoomIn)
+    )
+    zoom_in.trigger()
+
+    assert window._overview.zoom == DEFAULT_ZOOM + 1
+    assert not window._viewer.zoomed
+
+    window.zoom_out()
+    window.zoom_out()
+    assert window._overview.zoom == DEFAULT_ZOOM - 1
+
+    window.zoom_to_fit()
+    assert window._overview.zoom == DEFAULT_ZOOM
+
+
+def test_zoom_stops_at_both_ends(window: MainWindow) -> None:
+    from fotozeef.ui.overview import TILE_WIDTHS
+
+    window.show_overview()
+    for _ in range(20):
+        window.zoom_in()
+    assert window._overview.zoom == len(TILE_WIDTHS) - 1
+    for _ in range(20):
+        window.zoom_out()
+    assert window._overview.zoom == 0
+
+
+def test_the_photo_zooms_again_outside_the_overview(window: MainWindow) -> None:
+    window.show_overview()
+    window.hide_overview()
+
+    window.zoom_in()
+
+    assert window._viewer.zoomed
+
+
+def test_the_zoom_is_remembered(window: MainWindow) -> None:
+    from fotozeef.ui.main_window import _saved_overview_zoom
+
+    window.show_overview()
+    window._overview.set_zoom(5)
+
+    assert _saved_overview_zoom() == 5
+    window._overview.set_zoom(2)
+
+
+def test_large_tiles_ask_for_the_sharper_thumbnail(window: MainWindow) -> None:
+    from PySide6.QtCore import QSize
+
+    requested: list[int] = []
+    service = window._service
+    original = service.scaled_pixmap
+
+    def spy(entry, target, size):
+        requested.append(target)
+        return original(entry, target, size)
+
+    service.scaled_pixmap = spy
+    entry = window._state.entries[0]
+
+    window._overview_pixmap(entry, QSize(150, 120))
+    assert requested == [service.filmstrip_target]
+
+    requested.clear()
+    window._overview_pixmap(entry, QSize(400, 320))
+    assert requested[0] == service.grid_target

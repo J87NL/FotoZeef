@@ -27,6 +27,7 @@ class WriteResult:
 class ReconcileResult:
     dropped: list[int] = field(default_factory=list)
     adopted: list[tuple[int, str]] = field(default_factory=list)
+    unreachable: bool = False
 
     @property
     def changed(self) -> bool:
@@ -43,7 +44,19 @@ class DestinationWriter:
         return self._destination
 
     def ensure_destination(self) -> None:
-        self._destination.mkdir(parents=True, exist_ok=True)
+        """Creates the destination folder, but only inside a folder that is there.
+
+        With parents=True an unplugged USB disk would get its folder tree made on the
+        internal disk instead (on Linux and macOS its mount point is an ordinary path).
+        """
+        if self._destination.is_dir():
+            return
+        if not self._destination.parent.is_dir():
+            raise SelectionError(
+                f"{self._destination.parent} cannot be reached. If it is on an external disk,"
+                " connect it and try again."
+            )
+        self._destination.mkdir(exist_ok=True)
 
     def select(
         self,
@@ -72,7 +85,13 @@ class DestinationWriter:
             companion_names=tuple(companion_names),
         )
 
-    def deselect(self, entry: TimelineEntry, selection: Selection) -> None:
+    def deselect(
+        self,
+        entry: TimelineEntry,
+        selection: Selection,
+        reserved: Mapping[str, int] | None = None,
+    ) -> None:
+        """Removes this photo's copy, and the RAW copied with it if it really is that RAW."""
         if not selection.written_by_app:
             raise SelectionError(
                 f"{selection.written_name} was not written by this app; remove it yourself"
@@ -80,10 +99,16 @@ class DestinationWriter:
         target = self._destination / selection.written_name
         target.unlink(missing_ok=True)
 
+        others = reserved or {}
         stem = PurePosixPath(selection.written_name).stem
-        for companion in entry.photo.companions:
+        for companion, source in zip(entry.photo.companions, entry.companion_paths, strict=True):
             companion_name = f"{stem}{PurePosixPath(companion).suffix}"
-            (self._destination / companion_name).unlink(missing_ok=True)
+            owner = others.get(normalize_name(companion_name))
+            if owner is not None and owner != entry.photo.id:
+                continue
+            copy = self._destination / companion_name
+            if _same_size(copy, source):
+                copy.unlink(missing_ok=True)
 
     def _resolve_name(self, entry: TimelineEntry, reserved: Mapping[str, int]) -> str:
         filename = entry.photo.filename
@@ -116,10 +141,20 @@ def reconcile(
     selections: Iterable[Selection],
     settings: ProjectSettings,
 ) -> ReconcileResult:
-    """Destination folder is the source of truth for what is selected."""
+    """Destination folder is the source of truth for what is selected.
+
+    A file there counts as a photo's copy only when its name and its size match; a
+    leftover copy of a photo from a folder that left the project is never handed to
+    another photo that happens to share its name. A destination that cannot be reached,
+    because the disk it is on is not connected, changes nothing.
+    """
     result = ReconcileResult()
     entry_list = list(entries)
     selection_list = list(selections)
+
+    if not destination.is_dir() and not destination.parent.is_dir():
+        result.unreachable = True
+        return result
 
     present: dict[str, Path] = {}
     if destination.is_dir():
@@ -138,20 +173,35 @@ def reconcile(
     result.dropped = sorted(dropped)
 
     selected_ids = {item.photo_id for item in selection_list if item.photo_id not in dropped}
-    by_filename: dict[str, TimelineEntry] = {}
+    by_filename: dict[str, list[TimelineEntry]] = {}
     for entry in entry_list:
-        by_filename.setdefault(normalize_name(entry.photo.filename), entry)
+        by_filename.setdefault(normalize_name(entry.photo.filename), []).append(entry)
 
-    for key, _path in present.items():
+    for key, path in present.items():
         if key in claimed:
             continue
-        entry = by_filename.get(key)
-        if entry is None or entry.photo.id in selected_ids:
-            continue
-        result.adopted.append((entry.photo.id, _path.name))
-        selected_ids.add(entry.photo.id)
+        size = _size(path)
+        for entry in by_filename.get(key, ()):
+            if entry.photo.id in selected_ids or entry.photo.file_size != size:
+                continue
+            result.adopted.append((entry.photo.id, path.name))
+            selected_ids.add(entry.photo.id)
+            break
 
     return result
+
+
+def _size(path: Path) -> int | None:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
+def _same_size(copy: Path, original: Path) -> bool:
+    """Whether a destination file is plausibly a copy of this original (copy2 keeps size)."""
+    size = _size(copy)
+    return size is not None and size == _size(original)
 
 
 def _safe_label(label: str) -> str:
