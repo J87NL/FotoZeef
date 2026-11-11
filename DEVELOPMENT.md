@@ -250,9 +250,13 @@ it yourself triggers none of it.
    size match, so a leftover copy of a photo that left the project is never
    handed to a different photo with the same name. When the disk a destination
    or source lives on is not connected (`fs.volume_missing`: a drive letter
-   that is gone, or nothing mounted under `/media`, `/run/media`, `/mnt` or
-   `/Volumes` on the way), nothing is dropped, nothing is created on the empty
-   mount point, and selecting or unselecting is refused until it is back.
+   that is gone, or under `/media`, `/run/media`, `/mnt` or `/Volumes` no mount
+   on the way and only an empty or missing folder left), nothing is dropped,
+   nothing is created on the empty mount point, and selecting or unselecting
+   is refused until it is back. A plain folder with files in it under `/mnt`
+   counts as present; an empty one there cannot be told apart from an
+   unmounted disk. Disks mounted elsewhere are caught one way only: a
+   destination that held a selection and whose parent folder is gone.
    Folders leaving a project never delete anything from disk.
 7. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
    original was dropped in 0.4: the originals and their folders are read-only.

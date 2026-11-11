@@ -60,7 +60,8 @@ class SelectionQueue(QObject):
     """Serialises destination writes so the UI never waits for disk I/O."""
 
     done = Signal(int, bool)
-    failed = Signal(int, bool, str)
+    failed = Signal(int, bool, object)
+    """photo id, whether it was a select, and the exception that stopped it."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -101,7 +102,7 @@ class SelectionQueue(QObject):
             try:
                 operation()
             except Exception as error:
-                self.failed.emit(photo_id, selected, str(error))
+                self.failed.emit(photo_id, selected, error)
                 continue
             self.done.emit(photo_id, selected)
 

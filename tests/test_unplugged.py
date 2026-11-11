@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from PySide6.QtWidgets import QApplication
@@ -187,25 +187,47 @@ def test_a_folder_reached_two_ways_is_one_folder(tmp_path: Path) -> None:
     assert folder_key(tmp_path / "gone") == folder_key(tmp_path / "gone" / "x" / "..")
 
 
-def test_deselecting_keeps_a_raw_owned_by_another_selected_photo(
-    tmp_path: Path, library: Library, jpeg_factory
-) -> None:
-    """Same-sized RAWs: only the owner check can tell them apart."""
-    kept = tmp_path / "z"
-    dropped = tmp_path / "x"
-    kept.mkdir()
-    (kept / "IMG_1.CR2").write_bytes(b"z" * 400)
-    jpeg_factory(dropped / "IMG_1.JPG")
-    (dropped / "IMG_1.CR2").write_bytes(b"x" * 400)
+def test_deselecting_keeps_a_raw_owned_by_another_selected_photo(tmp_path: Path) -> None:
+    """Same size, so only the owner check keeps another photo's RAW."""
+    from datetime import UTC
+
+    from fotozeef.core.models import (
+        CaptureSource,
+        Photo,
+        Selection,
+        Source,
+        TimelineEntry,
+    )
+    from fotozeef.core.selection import DestinationWriter
+
+    folder = tmp_path / "x"
+    folder.mkdir()
+    (folder / "IMG_1.JPG").write_bytes(b"j" * 10)
+    (folder / "IMG_1.CR2").write_bytes(b"x" * 400)
     destination = tmp_path / "out"
-    project = library.create_project("raw", [kept, dropped], destination, ProjectSettings())
-    state = library.open_project(project.id)
-    by_name = {entry.photo.relative_path: index for index, entry in enumerate(state.entries)}
-    library.select(state, by_name["IMG_1.CR2"])
-    library.select(state, by_name["IMG_1.JPG"])
+    destination.mkdir()
+    (destination / "IMG_1.JPG").write_bytes(b"j" * 10)
+    (destination / "IMG_1.CR2").write_bytes(b"z" * 400)
+    source = Source(1, 1, folder, "x", 0, 0)
+    photo = Photo(
+        7,
+        1,
+        "IMG_1.JPG",
+        10,
+        0.0,
+        None,
+        CaptureSource.MTIME,
+        1,
+        None,
+        "IMG_1",
+        companions=("IMG_1.CR2",),
+    )
+    entry = TimelineEntry(photo, source, datetime(2024, 1, 1))
+    record = Selection(7, 1, "IMG_1.JPG", True, datetime(2024, 1, 1, tzinfo=UTC))
 
-    library.deselect(state, by_name["IMG_1.JPG"])
+    DestinationWriter(destination, ProjectSettings()).deselect(entry, record, {"img_1.cr2": 99})
 
+    assert not (destination / "IMG_1.JPG").exists()
     assert (destination / "IMG_1.CR2").read_bytes() == b"z" * 400
 
 
@@ -269,3 +291,199 @@ def test_a_missing_drive_letter_is_a_disk_that_is_not_connected() -> None:
 
     assert volume_missing("E:\\Foto's", platform="win32", exists=lambda anchor: False)
     assert not volume_missing("C:\\Foto's", platform="win32", exists=lambda anchor: True)
+
+
+def test_unselecting_waits_for_the_originals_disk_too(
+    tmp_path: Path, library: Library, jpeg_factory, monkeypatch
+) -> None:
+    """The copy is on the internal disk, the original on an unplugged USB disk."""
+    from fotozeef.core.selection import DiskNotConnected
+
+    disk = Disk(tmp_path / "usb", monkeypatch)
+    jpeg_factory(disk.path / "Vakantie" / "a.jpg")
+    destination = tmp_path / "selectie"
+    project = library.create_project(
+        "split", [disk.path / "Vakantie"], destination, ProjectSettings()
+    )
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    disk.connected = False
+
+    with pytest.raises(DiskNotConnected):
+        library.deselect(state, 0)
+    assert (destination / "a.jpg").is_file()
+
+
+def test_an_empty_mount_folder_as_source_is_reported(
+    tmp_path: Path, library: Library, jpeg_factory, monkeypatch
+) -> None:
+    """A disk mounted straight at /mnt/usb, unplugged: the empty folder stays."""
+    disk = Disk(tmp_path / "usb", monkeypatch)
+    jpeg_factory(disk.path / "a.jpg")
+    project = library.create_project("root", [disk.path], tmp_path / "out", ProjectSettings())
+    library.open_project(project.id)
+    disk.unplug()
+
+    state = library.open_project(project.id)
+
+    assert state.scan.unreachable == [disk.path]
+
+
+def test_a_disk_mounted_elsewhere_keeps_the_selection(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    """Mounted at /data/usb, outside the usual places: its parent folder vanishes."""
+    from fotozeef.core.selection import DiskNotConnected
+
+    local = tmp_path / "local"
+    jpeg_factory(local / "a.jpg")
+    jpeg_factory(local / "b.jpg")
+    mount = tmp_path / "data" / "usb"
+    destination = mount / "Vakantie" / "selectie"
+    project = library.create_project("elsewhere", [local], destination, ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    shutil.move(mount, tmp_path / "away")
+    mount.mkdir()
+
+    state = library.open_project(project.id)
+
+    assert len(state.selections) == 1
+    assert state.scan.destination_unreachable
+    with pytest.raises(DiskNotConnected):
+        library.select(state, 1)
+    assert list(mount.iterdir()) == []
+
+
+def test_three_reopens_leave_one_notice(
+    app: QApplication, tmp_path: Path, library: Library, usb
+) -> None:
+    project, disk = usb
+    disk.unplug()
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window.show()
+
+    for _ in range(3):
+        window._on_project_opened(library.open_project(project.id))
+        app.processEvents()
+
+    from PySide6.QtWidgets import QMessageBox
+
+    visible = [box for box in window.findChildren(QMessageBox) if box.isVisible()]
+    assert len(visible) == 1
+    assert window._notice is visible[0]
+    assert not window._notice.isModal()
+    window.close()
+
+
+def test_a_refused_unselect_explains_itself(
+    app: QApplication, tmp_path: Path, library: Library, monkeypatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from fotozeef.core.selection import DiskNotConnected
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    shown: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: shown.append(args[2]))
+
+    window._on_selection_failed(1, False, DiskNotConnected(Path("/media/jo/USB/selectie")))
+
+    assert shown and "/media/jo/USB/selectie" in shown[0]
+    window.close()
+
+
+# --- telling a disk that is not there from an ordinary folder -------------------------
+
+
+@pytest.fixture
+def mounts(tmp_path: Path):
+    """A fake / with media, mnt and a user, where nothing is ever mounted."""
+    root = tmp_path / "root"
+    trees = tuple(PurePosixPath(root, *tree[1:]).parts for tree in (("/", "media"), ("/", "mnt")))
+    (root / "media" / "jo").mkdir(parents=True)
+    (root / "mnt").mkdir(parents=True)
+
+    def missing(path: Path) -> bool:
+        from fotozeef.core.fs import volume_missing
+
+        return volume_missing(
+            path, platform="linux", ismount=lambda _p: False, user="jo", trees=trees
+        )
+
+    return root, missing
+
+
+def test_an_ordinary_folder_under_mnt_is_there(mounts) -> None:
+    root, missing = mounts
+    photos = root / "mnt" / "photos"
+    photos.mkdir()
+    (photos / "a.jpg").write_bytes(b"x")
+
+    assert not missing(photos)
+    assert not missing(photos / "a.jpg")
+    assert not missing(photos / "selectie" / "new")
+
+
+def test_a_symlinked_folder_under_mnt_is_there(mounts, tmp_path: Path) -> None:
+    if sys.platform == "win32":
+        pytest.skip("symlinks need admin rights on Windows")
+    root, missing = mounts
+    target = tmp_path / "srv"
+    target.mkdir()
+    (target / "a.jpg").write_bytes(b"x")
+    os.symlink(target, root / "mnt" / "photos")
+
+    assert not missing(root / "mnt" / "photos" / "a.jpg")
+
+
+def test_an_empty_mount_folder_is_a_disk_that_is_not_there(mounts) -> None:
+    root, missing = mounts
+    (root / "mnt" / "usb").mkdir()
+
+    assert missing(root / "mnt" / "usb")
+    assert missing(root / "mnt" / "usb" / "Vakantie" / "selectie")
+
+
+def test_a_vanished_udisks_folder_is_a_disk_that_is_not_there(mounts) -> None:
+    root, missing = mounts
+
+    assert missing(root / "media" / "jo" / "USB" / "Vakantie")
+    assert missing(root / "mnt" / "gone" / "x")
+
+
+def test_another_folder_in_media_is_there(mounts) -> None:
+    root, missing = mounts
+    archive = root / "media" / "archive"
+    archive.mkdir()
+    (archive / "2019").mkdir()
+
+    assert not missing(archive / "2019")
+
+
+def test_an_empty_selection_folder_on_an_ordinary_folder_is_there(mounts) -> None:
+    """Everything unselected leaves the selection folder empty; it is still there."""
+    root, missing = mounts
+    photos = root / "mnt" / "photos"
+    (photos / "selectie").mkdir(parents=True)
+    (photos / "a.jpg").write_bytes(b"x")
+
+    assert not missing(photos / "selectie")
+
+
+def test_a_photos_own_raw_left_behind_keeps_its_plain_name(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    shoot = tmp_path / "cam"
+    jpeg_factory(shoot / "IMG_1.JPG")
+    (shoot / "IMG_1.CR2").write_bytes(b"raw" * 100)
+    destination = tmp_path / "out"
+    destination.mkdir()
+    shutil.copyfile(shoot / "IMG_1.CR2", destination / "IMG_1.CR2")
+    project = library.create_project("again", [shoot], destination, ProjectSettings())
+    state = library.open_project(project.id)
+
+    record = library.select(state, 0)
+
+    assert record.written_name == "IMG_1.JPG"
+    assert sorted(path.name for path in destination.iterdir()) == ["IMG_1.CR2", "IMG_1.JPG"]

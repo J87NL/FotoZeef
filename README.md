@@ -139,8 +139,8 @@ while the screen is black brings the photo back; the show stays paused until
   `-`, makes the tiles larger or smaller; `0` brings them back to normal.
 - **Photos on a USB disk?** Opening the project while the disk is not connected
   is safe: FotoZeef says which folders it cannot find, shows their photos as
-  missing and keeps your selection. Selecting and unselecting wait until the
-  disk is back. Connect it and open the project again.
+  missing and keeps your selection. Selecting and unselecting are refused until
+  the disk is back. Connect it and open the project again.
 - **What counts as selected** is what is in the selection folder. A file there
   counts for a photo when its name and its size match, so an unchanged copy you
   put in by hand is picked up too; an edited or rotated one is not.

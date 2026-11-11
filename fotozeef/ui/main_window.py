@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from fotozeef.appinfo import APP_NAME
 from fotozeef.core.library import Library, ProjectState, clocks, folder_key
 from fotozeef.core.models import Source, TimelineEntry
+from fotozeef.core.selection import DiskNotConnected
 from fotozeef.core.slideshow import PhotoScope, SlideOrder, SlideshowSettings, start_position
 from fotozeef.core.thumbnails import FILMSTRIP_SIZE, ThumbnailCache
 from fotozeef.ui.about_dialog import AboutDialog
@@ -765,7 +766,7 @@ class MainWindow(QMainWindow):
         notice = QMessageBox(QMessageBox.Icon.Warning, APP_NAME, "\n\n".join(parts), parent=self)
         notice.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         notice.setModal(False)
-        notice.destroyed.connect(self._forget_notice)
+        notice.destroyed.connect(lambda *_args: self._forget_notice(notice))
         self._notice = notice
         notice.show()
 
@@ -775,8 +776,10 @@ class MainWindow(QMainWindow):
             notice.close()
         self._notice = None
 
-    def _forget_notice(self, *_args: object) -> None:
-        self._notice = None
+    def _forget_notice(self, notice: QMessageBox) -> None:
+        """Only the box that is still current: an older one is deleted later than replaced."""
+        if self._notice is notice:
+            self._notice = None
 
     def _on_project_failed(self, message: str) -> None:
         self._close_progress()
@@ -906,8 +909,20 @@ class MainWindow(QMainWindow):
             self._viewer.set_selected(selected)
         self._update_status()
 
-    def _on_selection_failed(self, photo_id: int, intended: bool, message: str) -> None:
+    def _on_selection_failed(self, photo_id: int, intended: bool, error: object) -> None:
         self._apply_selection_locally(photo_id, not intended)
+        if isinstance(error, DiskNotConnected):
+            QMessageBox.warning(
+                self,
+                APP_NAME,
+                self.tr(
+                    "The disk with {0} is not connected.\n\n"
+                    "Connect it and open the project again. Until then photos cannot be"
+                    " selected or unselected; your selection so far is kept."
+                ).format(error.path),
+            )
+            return
+        message = str(error)
         if not intended:
             self.statusBar().showMessage(message, 6000)
             return

@@ -16,6 +16,14 @@ class SelectionError(RuntimeError):
     pass
 
 
+class DiskNotConnected(SelectionError):
+    """The disk with this folder is not connected; the UI words it for the user."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(f"The disk with {path} is not connected. Connect it and try again.")
+        self.path = path
+
+
 @dataclass(frozen=True, slots=True)
 class WriteResult:
     photo_id: int
@@ -43,27 +51,29 @@ class DestinationWriter:
     def destination(self) -> Path:
         return self._destination
 
-    def ensure_destination(self) -> None:
+    def ensure_destination(self, had_selections: bool = False) -> None:
         """Creates the destination folder, unless the disk it belongs on is not connected.
 
         Creating it then would put it on the internal disk, in the empty folder where the
-        USB disk is normally mounted (Linux and macOS).
+        disk is normally mounted. Besides the usual mount places, a destination that held
+        a selection before and whose parent is gone counts as such a disk too.
         """
         self._check_disk(self._destination)
+        destination = self._destination
+        if had_selections and not destination.is_dir() and not destination.parent.is_dir():
+            raise DiskNotConnected(destination)
         self._destination.mkdir(parents=True, exist_ok=True)
 
     def _check_disk(self, path: Path) -> None:
         if volume_missing(path):
-            raise SelectionError(
-                f"The disk with {path} is not connected. Connect it and try again."
-            )
+            raise DiskNotConnected(path)
 
     def select(
         self,
         entry: TimelineEntry,
         reserved: Mapping[str, int],
     ) -> WriteResult:
-        self.ensure_destination()
+        self.ensure_destination(had_selections=bool(reserved))
         written_name = self._resolve_name(entry, reserved)
         target = self._destination / written_name
         shutil.copy2(os_path(entry.absolute_path), os_path(target))
@@ -144,11 +154,12 @@ class DestinationWriter:
         if not self._settings.copy_raw_sidecar:
             return True
         stem = PurePosixPath(candidate).stem
-        for companion in entry.photo.companions:
+        for companion, source in zip(entry.photo.companions, entry.companion_paths, strict=True):
             name = f"{stem}{PurePosixPath(companion).suffix}"
             if reserved.get(normalize_name(name)) == entry.photo.id:
                 continue
-            if (self._destination / name).exists():
+            existing = self._destination / name
+            if existing.exists() and not _same_size(existing, source):
                 return False
         return True
 
@@ -174,7 +185,8 @@ def reconcile(
     entry_list = list(entries)
     selection_list = list(selections)
 
-    if volume_missing(destination):
+    gone_with_its_parent = not destination.is_dir() and not destination.parent.is_dir()
+    if volume_missing(destination) or (selection_list and gone_with_its_parent):
         result.unreachable = True
         return result
 
