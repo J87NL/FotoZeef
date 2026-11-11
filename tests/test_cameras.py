@@ -227,3 +227,53 @@ def test_the_viewer_caption_names_the_photos_camera(app, two_cameras_in_one_fold
     )
 
     assert viewer._detail_text(sony).startswith("ILCE-7M3")
+
+
+def test_the_time_reference_follows_a_new_offset(
+    app, tmp_path: Path, library: Library, two_cameras_in_one_folder, monkeypatch
+) -> None:
+    from fotozeef.core.thumbnails import ThumbnailCache
+    from fotozeef.ui.main_window import MainWindow
+    from fotozeef.ui.offset_dialog import OffsetDialog
+
+    state = two_cameras_in_one_folder
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    window._on_project_opened(state)
+    window.go_to(
+        window._state.index_of(
+            next(e.photo.id for e in state.entries if e.photo.filename == "s1.jpg")
+        )
+    )
+    window.set_time_reference()
+    source_id = state.sources[0].id
+
+    def shift_sony(dialog: OffsetDialog) -> int:
+        dialog._spins[(source_id, "ILCE-7M3")].setValue(3600)
+        return OffsetDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(OffsetDialog, "exec", shift_sony)
+    window.edit_offsets()
+
+    assert window._reference.effective_at == datetime(2024, 6, 1, 14, 5, 0)
+    window.close()
+
+
+def test_a_name_clash_is_prefixed_with_the_photos_own_camera(
+    tmp_path: Path, library: Library
+) -> None:
+    shoot = tmp_path / "shoot"
+    _photo(shoot / "canon" / "IMG_0001.JPG", "Canon EOS R6", datetime(2024, 6, 1, 14, 0))
+    _photo(shoot / "canon" / "IMG_0002.JPG", "Canon EOS R6", datetime(2024, 6, 1, 14, 1))
+    _photo(shoot / "sony" / "IMG_0001.JPG", "ILCE-7M3", datetime(2024, 6, 1, 14, 2))
+    destination = tmp_path / "out"
+    project = library.create_project("clash", [shoot], destination, ProjectSettings())
+    state = library.open_project(project.id)
+
+    for index in range(len(state.entries)):
+        if state.entries[index].photo.filename == "IMG_0001.JPG":
+            library.select(state, index)
+
+    assert sorted(path.name for path in destination.iterdir()) == [
+        "ILCE-7M3_IMG_0001.JPG",
+        "IMG_0001.JPG",
+    ]

@@ -62,7 +62,8 @@ test suite fast and leaves the door open for a CLI later.
 | Thumbnails | `platformdirs.user_cache_dir("FotoZeef")` |
 
 One database for the whole installation, never next to the photos. Nothing is
-ever written into a source folder.
+written into a source folder, except the selection folder when you leave the
+destination at its default `<first source>/selectie`.
 
 ## Translations
 
@@ -133,9 +134,9 @@ That writes `packaging\windows\Output\FotoZeef-<version>-setup.exe`, which
 installs per-user without admin rights. It upgrades in place (same `AppId`),
 first deleting the previous `_internal` folder so no stale files stay behind,
 and refuses to install over a newer version because that version may have
-migrated the database further. It follows the Windows language (English or
-Dutch); the script is UTF-8 with a BOM, which Inno Setup needs for the Dutch
-text. The bundled manifest turns on long-path
+migrated the database further (from 0.4.0 on; older installers lack the check).
+It follows the Windows language (English or Dutch) without asking; the script
+is UTF-8 with a BOM, which Inno Setup needs for the Dutch text. The bundled manifest turns on long-path
 awareness and PerMonitorV2 DPI.
 
 ### macOS — .app
@@ -245,6 +246,7 @@ it yourself triggers none of it.
 4. **Recursive scanning** — on by default, per-project setting.
 5. **`copy_raw_sidecar`** — on by default, per-project setting.
 6. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
-   original was dropped after 0.3: the source folders are now strictly read-only.
+   original was dropped in 0.4: the originals and their folders are read-only.
    The `write_xmp` column stays in the database, unused, so older databases open
-   unchanged.
+   unchanged. Sidecars written by 0.3 or earlier (marked `fotozeef`) are left
+   where they are; delete them by hand if a tool shows their rating.

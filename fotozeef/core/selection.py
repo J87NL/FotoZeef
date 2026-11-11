@@ -87,7 +87,7 @@ class DestinationWriter:
 
     def _resolve_name(self, entry: TimelineEntry, reserved: Mapping[str, int]) -> str:
         filename = entry.photo.filename
-        candidates = [filename, f"{_safe_label(entry.source.label)}_{filename}"]
+        candidates = [filename, f"{_safe_label(entry.camera_label)}_{filename}"]
         stem = PurePosixPath(candidates[1]).stem
         suffix = PurePosixPath(filename).suffix
         candidates.extend(f"{stem}_{index}{suffix}" for index in range(2, 100))

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fotozeef.core.library import DEFAULT_DESTINATION_NAME
+from fotozeef.core.library import DEFAULT_DESTINATION_NAME, folder_key
 
 
 class SourceList(QWidget):
@@ -51,8 +51,10 @@ class SourceList(QWidget):
         return tuple(Path(self._list.item(row).text()) for row in range(self._list.count()))
 
     def add(self, folder: str | Path) -> bool:
-        text = str(folder)
-        if not text or text in {str(path) for path in self.paths}:
+        if not str(folder):
+            return False
+        text = str(Path(folder))
+        if folder_key(text) in {folder_key(path) for path in self.paths}:
             return False
         self._list.addItem(text)
         self.changed.emit()

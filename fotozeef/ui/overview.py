@@ -74,7 +74,8 @@ class OverviewGrid(QListView):
         self.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         self.setStyleSheet("QListView { background: #1c1c1e; border: none; }")
-        self.activated.connect(self._open)
+        # One click opens; Enter is handled in keyPressEvent. `activated` would fire
+        # a second time on platforms where a single click activates.
         self.clicked.connect(self._open)
 
     def source_row(self, index: QModelIndex | QPersistentModelIndex) -> int:
@@ -102,7 +103,7 @@ class OverviewGrid(QListView):
             self.open_requested.emit(self.source_row(current))
         elif key == Qt.Key.Key_Space and current.isValid():
             self.toggle_requested.emit(self.source_row(current))
-        elif key in (Qt.Key.Key_Escape, Qt.Key.Key_G):
+        elif key == Qt.Key.Key_Escape:
             self.close_requested.emit()
         else:
             super().keyPressEvent(event)
@@ -126,6 +127,8 @@ class OverviewPage(QWidget):
 
         self._summary = QLabel(self)
         self._only_selected = QCheckBox(self.tr("Only selected photos"), self)
+        # Keyboard focus stays in the grid, so Space keeps selecting photos.
+        self._only_selected.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._only_selected.toggled.connect(self._filter)
         self._hint = QLabel(self)
         self._hint.setStyleSheet("color: #8e8e96;")
@@ -166,3 +169,4 @@ class OverviewPage(QWidget):
         row = self.grid.source_row(current) if current.isValid() else 0
         self._proxy.set_only_selected(only)
         self.grid.show_row(row)
+        self.grid.setFocus()

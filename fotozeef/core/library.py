@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
@@ -89,9 +90,10 @@ class Library:
     ) -> Project:
         if not source_paths:
             raise ValueError("A project needs at least one source folder")
-        target = destination or (source_paths[0] / DEFAULT_DESTINATION_NAME)
+        paths = _unique_folders(source_paths)
+        target = destination or (paths[0] / DEFAULT_DESTINATION_NAME)
         project = self.projects.create(name=name, destination=target, settings=settings)
-        for index, path in enumerate(source_paths):
+        for index, path in enumerate(paths):
             self.sources.add(project.id, path, label=path.name or str(path), sort_order=index)
         return project
 
@@ -99,24 +101,53 @@ class Library:
         """Makes the project read exactly these folders; returns the folders it dropped.
 
         A dropped folder takes its photos, their selection records and its camera offsets
-        with it; copies already in the destination stay where they are.
+        with it. The copies this app wrote for its selected photos are removed from the
+        destination too: left there, the next open would hand them to a photo with the
+        same name in another folder.
         """
         if not paths:
             raise ValueError("A project needs at least one source folder")
         current = self.sources.list(project_id)
-        wanted = {str(path) for path in paths}
-        dropped = tuple(source for source in current if str(source.path) not in wanted)
+        wanted = {folder_key(path) for path in paths}
+        dropped = tuple(source for source in current if folder_key(source.path) not in wanted)
+        self._remove_copies(project_id, {source.id for source in dropped})
         for source in dropped:
             self.sources.remove(source.id)
-        known = {str(source.path) for source in current}
+        known = {folder_key(source.path) for source in current}
         order = max((source.sort_order for source in current), default=-1) + 1
-        for path in paths:
-            if str(path) in known:
+        for path in _unique_folders(paths):
+            if folder_key(path) in known:
                 continue
             self.sources.add(project_id, path, label=path.name or str(path), sort_order=order)
-            known.add(str(path))
+            known.add(folder_key(path))
             order += 1
         return dropped
+
+    def copies_from(self, project_id: int, source_ids: Iterable[int]) -> int:
+        """How many destination copies this app wrote for photos in these folders."""
+        state = self.load_state(project_id)
+        wanted = set(source_ids)
+        return sum(
+            1
+            for entry in state.entries
+            if entry.source.id in wanted
+            and (record := state.selections.get(entry.photo.id)) is not None
+            and record.written_by_app
+        )
+
+    def _remove_copies(self, project_id: int, source_ids: set[int]) -> None:
+        if not source_ids:
+            return
+        state = self.load_state(project_id)
+        writer = selection_ops.DestinationWriter(state.project.destination, state.project.settings)
+        for entry in state.entries:
+            record = state.selections.get(entry.photo.id)
+            if entry.source.id not in source_ids or record is None or not record.written_by_app:
+                continue
+            try:
+                writer.deselect(entry, record)
+            except OSError:
+                _log.warning("could not remove %s from the destination", record.written_name)
 
     def open_project(
         self,
@@ -393,6 +424,22 @@ def clocks(entries: Iterable[TimelineEntry], sources: Sequence[Source]) -> tuple
             Clock(source=source, camera=camera, photos=total) for camera, total in cameras
         )
     return tuple(result)
+
+
+def folder_key(path: Path | str) -> str:
+    """Compares folders the way the file system does: `C:/x` and `C:\\x` are one folder."""
+    return os.path.normcase(os.path.normpath(str(path)))
+
+
+def _unique_folders(paths: Iterable[Path]) -> list[Path]:
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for path in paths:
+        key = folder_key(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(Path(path))
+    return unique
 
 
 def _with_offset(source: Source, offset: int, camera: str | None) -> Source:

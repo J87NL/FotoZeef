@@ -177,7 +177,7 @@ def test_dropping_a_folder_asks_first(
 
     monkeypatch.setattr(SettingsDialog, "exec", edit)
     monkeypatch.setattr(QMessageBox, "question", refuse)
-    window.edit_settings(project.id)
+    window.edit_project_settings(project.id)
 
     assert asked and str(first) in asked[0]
     assert [source.path for source in library.sources.list(project.id)] == [first, second]
@@ -233,3 +233,88 @@ def test_the_open_project_reopens_after_its_settings_change(
     window.edit_settings()
 
     assert opened == [project.id]
+
+
+def test_the_settings_menu_item_opens_the_settings_of_the_open_project(
+    window: MainWindow, library: Library, shoot, monkeypatch
+) -> None:
+    project, _first, _second = shoot
+    window._on_project_opened(library.open_project(project.id))
+    shown: list[int] = []
+    monkeypatch.setattr(window, "_start_open", lambda _project_id: None)
+
+    def record(dialog: SettingsDialog) -> int:
+        shown.append(len(dialog.source_paths))
+        return SettingsDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(SettingsDialog, "exec", record)
+    action = next(action for action in window._actions if "Settings" in action.text())
+
+    action.trigger()
+
+    assert shown == [1], "the real menu action must reach the dialog"
+
+
+def test_dropping_a_folder_takes_its_copies_out_of_the_destination(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    jpeg_factory(first / "IMG_0001.JPG", captured_at=datetime(2024, 1, 1, 9))
+    jpeg_factory(second / "IMG_0001.JPG", captured_at=datetime(2024, 1, 1, 10))
+    destination = tmp_path / "out"
+    project = library.create_project("two", [first, second], destination, ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    assert library.copies_from(project.id, [state.sources[0].id]) == 1
+
+    library.set_sources(project.id, [second])
+
+    assert not (destination / "IMG_0001.JPG").exists()
+    reopened = library.open_project(project.id)
+    assert reopened.selections == {}, "the other folder's IMG_0001 must not inherit it"
+    assert library.selections.list(project.id) == ()
+
+
+def test_the_drop_confirmation_says_how_many_copies_go(
+    window: MainWindow, library: Library, shoot, monkeypatch
+) -> None:
+    project, first, second = shoot
+    library.set_sources(project.id, [first, second])
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    asked: list[str] = []
+
+    def edit(dialog: SettingsDialog) -> int:
+        dialog._sources.select_row(0)
+        dialog._sources.remove_selected()
+        return SettingsDialog.DialogCode.Accepted
+
+    def refuse(*args) -> QMessageBox.StandardButton:
+        asked.append(args[2])
+        return QMessageBox.StandardButton.Cancel
+
+    monkeypatch.setattr(SettingsDialog, "exec", edit)
+    monkeypatch.setattr(QMessageBox, "question", refuse)
+    window.edit_project_settings(project.id)
+
+    assert "1" in asked[0].split(str(first))[1]
+    assert (first.parent / "out" / "a.jpg").is_file(), "cancel leaves the copy alone"
+
+
+def test_the_same_folder_is_never_added_twice(
+    app: QApplication, tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    from fotozeef.ui.project_fields import SourceList
+
+    folder = tmp_path / "cam"
+    jpeg_factory(folder / "a.jpg")
+    sources = SourceList()
+    assert sources.add(folder)
+    assert not sources.add(f"{folder}/")
+    assert not sources.add(str(folder) + "/.")
+    assert sources.paths == (folder,)
+
+    project = library.create_project("once", [folder, Path(f"{folder}/")], None, ProjectSettings())
+    assert len(library.sources.list(project.id)) == 1
+    assert len(library.open_project(project.id).entries) == 1

@@ -36,15 +36,19 @@ def _grid_rows(window: MainWindow) -> int:
     return window._overview.grid.model().rowCount()
 
 
+def _overview_action(window: MainWindow):
+    return next(action for action in window._actions if action.shortcut().toString() == "G")
+
+
 def test_g_shows_every_photo_and_hides_the_filmstrip(window: MainWindow) -> None:
     window.show()
-    _press(window, Qt.Key.Key_G)
+    _overview_action(window).trigger()
 
     assert window.overview_shown
     assert _grid_rows(window) == 30
     assert not window._filmstrip.isVisible()
 
-    _press(window._overview.grid, Qt.Key.Key_G)
+    _overview_action(window).trigger()
     assert not window.overview_shown
     assert window._filmstrip.isVisible()
 
@@ -161,3 +165,25 @@ def test_leaving_fullscreen_keeps_the_filmstrip_hidden_in_the_overview(
 
     assert window.overview_shown
     assert not window._filmstrip.isVisible()
+
+
+def test_the_filter_never_takes_the_keyboard_from_the_grid(window: MainWindow) -> None:
+    window.show()
+    window.show_overview()
+
+    window._overview._only_selected.click()
+
+    assert window._overview._only_selected.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert window._overview.grid.hasFocus() or not window.isActiveWindow()
+
+
+def test_opening_a_project_leaves_the_overview_and_its_filter(
+    window: MainWindow, library: Library
+) -> None:
+    window.show_overview()
+    window._overview.set_only_selected(True)
+
+    window._on_project_opened(library.open_project(window._state.project.id))
+
+    assert not window.overview_shown
+    assert not window._overview.only_selected

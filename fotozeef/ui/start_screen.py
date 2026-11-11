@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Mapping, Sequence
 
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, QRect, QSize, Qt, Signal
@@ -21,6 +22,11 @@ from PySide6.QtWidgets import (
 
 from fotozeef.appinfo import APP_NAME, ICON_PATH
 from fotozeef.core.models import Project
+
+# The key labelled "delete" on a Mac keyboard sends Backspace.
+_REMOVE_KEYS = (
+    (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) if sys.platform == "darwin" else (Qt.Key.Key_Delete,)
+)
 
 NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 PATH_ROLE = NAME_ROLE + 1
@@ -250,7 +256,7 @@ class StartScreen(QWidget):
         return self.tr("{0} in selection").format(count)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Delete and self.current_project_id() is not None:
+        if event.key() in _REMOVE_KEYS and self.current_project_id() is not None:
             self._request_remove()
             event.accept()
             return

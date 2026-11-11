@@ -1,5 +1,5 @@
 ﻿#define AppName "FotoZeef"
-#define AppVersion "0.3.0"
+#define AppVersion "0.4.0"
 #define AppPublisher "Johan Montenij"
 #define AppExe "FotoZeef.exe"
 
@@ -18,6 +18,8 @@ PrivilegesRequired=lowest
 WizardStyle=modern
 ; Asks to close a running FotoZeef before replacing its files.
 CloseApplications=yes
+; Follows the Windows language without asking.
+ShowLanguageDialog=auto
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"

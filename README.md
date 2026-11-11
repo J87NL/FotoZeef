@@ -16,8 +16,10 @@ Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases)
   which every desktop already has.
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
   To update, run the newer installer over the old one: it replaces the program
-  and keeps your projects. An older installer refuses to go over a newer
-  version, because an older FotoZeef cannot open projects saved by a newer one.
+  and keeps your projects. Going back is not possible, because an older
+  FotoZeef cannot open projects saved by a newer one: installers from 0.4.0 on
+  refuse to go over a newer version, and the 0.3.0 installer, which cannot check
+  this yet, should not be run over 0.4.0 or later.
 - **macOS** — `FotoZeef-<version>-macos.zip`, for Macs with Apple silicon (M1
   and later) on macOS 13 Ventura or newer. Unzip it and move `FotoZeef.app` to
   *Applications*. The app is not signed by Apple, so the first time macOS

@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         self._start_screen.new_requested.connect(self.new_project)
         self._start_screen.browse_requested.connect(self.open_project)
         self._start_screen.open_requested.connect(self._start_open)
-        self._start_screen.settings_requested.connect(self.edit_settings)
+        self._start_screen.settings_requested.connect(self.edit_project_settings)
         self._start_screen.remove_requested.connect(self.remove_project)
 
         self._pages = QStackedWidget(self)
@@ -208,12 +208,14 @@ class MainWindow(QMainWindow):
             return
         self._refresh_start_screen()
 
-    def edit_settings(self, project_id: int | None = None) -> None:
-        """The open project's settings, or with `project_id` those of one on the start screen."""
-        if project_id is None:
-            if self._state is None:
-                return
-            project_id = self._state.project.id
+    def edit_settings(self) -> None:
+        """The open project's settings (Project ▸ Settings…)."""
+        if self._state is not None:
+            self.edit_project_settings(self._state.project.id)
+
+    def edit_project_settings(self, project_id: int) -> None:
+        """Any project's settings: the open one, or one on the start screen."""
+        self._selection_queue.flush()
         project = self._library.projects.get(project_id)
         if project is None:
             return
@@ -225,7 +227,9 @@ class MainWindow(QMainWindow):
             return
         kept = {str(path) for path in dialog.source_paths}
         dropped = [source for source in sources if str(source.path) not in kept]
-        if dropped and not self._confirm_drop_sources(dropped):
+        if dropped and not self._confirm_drop_sources(
+            dropped, self._library.copies_from(project_id, (source.id for source in dropped))
+        ):
             return
         if dialog.name:
             self._library.projects.rename(project_id, dialog.name)
@@ -237,16 +241,20 @@ class MainWindow(QMainWindow):
         else:
             self._refresh_start_screen()
 
-    def _confirm_drop_sources(self, dropped: Sequence[Source]) -> bool:
+    def _confirm_drop_sources(self, dropped: Sequence[Source], copies: int) -> bool:
         folders = "\n".join(str(source.path) for source in dropped)
+        text = self.tr(
+            "These folders leave the project, with their photos and time offsets:\n\n{0}"
+        ).format(folders)
+        if copies:
+            text += "\n\n" + self.tr(
+                "Their {0} selected photos are taken out of the destination folder too."
+            ).format(copies)
+        text += "\n\n" + self.tr("The originals stay on disk. Continue?")
         answer = QMessageBox.question(
             self,
             APP_NAME,
-            self.tr(
-                "These folders leave the project, with their photos and time offsets:\n\n{0}\n\n"
-                "Nothing is deleted from disk, and photos already copied to the destination"
-                " stay there. Continue?"
-            ).format(folders),
+            text,
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
             QMessageBox.StandardButton.Cancel,
         )
@@ -536,8 +544,6 @@ class MainWindow(QMainWindow):
             self.move_cursor(-PAGE_JUMP)
         elif key == Qt.Key.Key_F:
             self.toggle_fullscreen()
-        elif key == Qt.Key.Key_G:
-            self.toggle_overview()
         elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
             self.zoom_in()
         elif key in (Qt.Key.Key_Minus, Qt.Key.Key_Underscore):
@@ -678,6 +684,8 @@ class MainWindow(QMainWindow):
 
     def _on_project_opened(self, state: ProjectState) -> None:
         self._close_progress()
+        self.hide_overview()
+        self._overview.set_only_selected(False)
         self._state = state
         self._reference = None
         self._unreadable = set()
