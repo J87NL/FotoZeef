@@ -256,7 +256,10 @@ it yourself triggers none of it.
    is refused until it is back. A plain folder with files in it under `/mnt`
    counts as present; an empty one there cannot be told apart from an
    unmounted disk. Disks mounted elsewhere are caught one way only: a
-   destination that held a selection and whose parent folder is gone.
+   destination that held a selection is gone and the nearest folder above it
+   is empty, which is what a mount folder looks like without its disk. A
+   destination deleted from a folder with files in it (or a new one typed in
+   Settings) is simply created again.
    Folders leaving a project never delete anything from disk.
 7. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
    original was dropped in 0.4: the originals and their folders are read-only.

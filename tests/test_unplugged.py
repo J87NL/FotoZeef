@@ -283,7 +283,12 @@ def test_a_disk_that_is_not_connected_is_recognised(
 ) -> None:
     from fotozeef.core.fs import volume_missing
 
-    assert volume_missing(path, platform=platform, ismount=mounted.__contains__) is missing
+    assert (
+        volume_missing(
+            path, platform=platform, ismount=mounted.__contains__, exists=lambda _p: False
+        )
+        is missing
+    )
 
 
 def test_a_missing_drive_letter_is_a_disk_that_is_not_connected() -> None:
@@ -387,9 +392,11 @@ def test_a_refused_unselect_explains_itself(
     shown: list[str] = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: shown.append(args[2]))
 
-    window._on_selection_failed(1, False, DiskNotConnected(Path("/media/jo/USB/selectie")))
+    path = Path("/media/jo/USB/selectie")
+    window._on_selection_failed(1, False, DiskNotConnected(path))
+    window._on_selection_failed(2, False, DiskNotConnected(path))
 
-    assert shown and "/media/jo/USB/selectie" in shown[0]
+    assert len(shown) == 2 and str(path) in shown[0]
     window.close()
 
 
@@ -400,7 +407,9 @@ def test_a_refused_unselect_explains_itself(
 def mounts(tmp_path: Path):
     """A fake / with media, mnt and a user, where nothing is ever mounted."""
     root = tmp_path / "root"
-    trees = tuple(PurePosixPath(root, *tree[1:]).parts for tree in (("/", "media"), ("/", "mnt")))
+    trees = tuple(
+        PurePosixPath(root.as_posix(), *tree[1:]).parts for tree in (("/", "media"), ("/", "mnt"))
+    )
     (root / "media" / "jo").mkdir(parents=True)
     (root / "mnt").mkdir(parents=True)
 
@@ -408,7 +417,11 @@ def mounts(tmp_path: Path):
         from fotozeef.core.fs import volume_missing
 
         return volume_missing(
-            path, platform="linux", ismount=lambda _p: False, user="jo", trees=trees
+            Path(path).as_posix(),
+            platform="linux",
+            ismount=lambda _p: False,
+            user="jo",
+            trees=trees,
         )
 
     return root, missing
@@ -487,3 +500,134 @@ def test_a_photos_own_raw_left_behind_keeps_its_plain_name(
 
     assert record.written_name == "IMG_1.JPG"
     assert sorted(path.name for path in destination.iterdir()) == ["IMG_1.CR2", "IMG_1.JPG"]
+
+
+# --- review: no trap for folders that were simply deleted or are new ------------------
+
+
+def test_a_deleted_selection_folder_in_pictures_is_made_again(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    pictures = tmp_path / "Pictures"
+    (pictures / "other").mkdir(parents=True)
+    shoot = tmp_path / "cam"
+    jpeg_factory(shoot / "a.jpg")
+    jpeg_factory(shoot / "b.jpg")
+    destination = pictures / "Export2024" / "Selectie"
+    project = library.create_project("deleted", [shoot], destination, ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    shutil.rmtree(pictures / "Export2024")
+
+    state = library.open_project(project.id)
+
+    assert not state.scan.destination_unreachable
+    assert state.selections == {}
+    library.select(state, 1)
+    assert (destination / "b.jpg").is_file()
+
+
+def test_a_new_destination_typed_in_settings_works_with_an_old_selection(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    pictures = tmp_path / "Pictures"
+    (pictures / "other").mkdir(parents=True)
+    shoot = tmp_path / "cam"
+    jpeg_factory(shoot / "a.jpg")
+    jpeg_factory(shoot / "b.jpg")
+    project = library.create_project("moved", [shoot], tmp_path / "old", ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    library.projects.set_destination(project.id, pictures / "Nieuw" / "Selectie")
+
+    state = library.open_project(project.id)
+    library.select(state, 1)
+
+    assert (pictures / "Nieuw" / "Selectie" / "b.jpg").is_file()
+
+
+def test_a_gone_folder_from_an_empty_mount_is_reported_as_uncertain(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    from fotozeef.core.selection import DiskNotConnected
+
+    local = tmp_path / "local"
+    jpeg_factory(local / "a.jpg")
+    jpeg_factory(local / "b.jpg")
+    mount = tmp_path / "data" / "usb"
+    project = library.create_project("elsewhere", [local], mount / "selectie", ProjectSettings())
+    state = library.open_project(project.id)
+    library.select(state, 0)
+    shutil.move(mount, tmp_path / "away")
+    mount.mkdir()
+    state = library.open_project(project.id)
+
+    with pytest.raises(DiskNotConnected) as refused:
+        library.select(state, 1)
+    assert not refused.value.certain
+
+
+def test_the_uncertain_message_offers_a_way_out(
+    app: QApplication, tmp_path: Path, library: Library, monkeypatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from fotozeef.core.selection import DiskNotConnected
+
+    window = MainWindow(library, ThumbnailCache(tmp_path / "cache"))
+    shown: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: shown.append(args[2]))
+
+    window._on_selection_failed(1, True, DiskNotConnected(tmp_path / "gone", certain=False))
+
+    assert "Settings" in shown[0]
+    window.close()
+
+
+def test_a_second_disk_in_the_users_media_folder_does_not_hide_the_first(mounts) -> None:
+    root, missing = mounts
+    backup = root / "media" / "jo" / "BACKUP"
+    backup.mkdir()
+    (backup / "x").write_bytes(b"x")
+
+    assert missing(root / "media" / "jo" / "FOTOS" / "Vakantie")
+    assert missing(root / "media" / "jo")
+
+
+def test_a_share_root_that_may_not_be_listed_is_there(monkeypatch) -> None:
+    from fotozeef.core import fs
+
+    def refuse(_path):
+        raise PermissionError("no listing")
+
+    monkeypatch.setattr(fs.os, "stat", refuse)
+    assert not fs.volume_missing("\\\\server\\share\\Foto", platform="win32")
+
+
+def test_a_folder_that_cannot_be_read_counts_as_empty(monkeypatch) -> None:
+    from fotozeef.core import fs
+
+    def refuse(_path):
+        raise OSError("gone")
+
+    monkeypatch.setattr(fs.os, "scandir", refuse)
+    assert fs._is_empty("/anywhere")
+
+
+def test_a_same_sized_but_different_raw_is_never_overwritten(
+    tmp_path: Path, library: Library, jpeg_factory
+) -> None:
+    """Uncompressed RAW files from one camera all have the same size."""
+    shoot = tmp_path / "cam"
+    jpeg_factory(shoot / "IMG_1.JPG")
+    (shoot / "IMG_1.RAF").write_bytes(b"a" * 500)
+    destination = tmp_path / "out"
+    destination.mkdir()
+    (destination / "IMG_1.RAF").write_bytes(b"b" * 500)
+    project = library.create_project("raf", [shoot], destination, ProjectSettings())
+    state = library.open_project(project.id)
+
+    record = library.select(state, 0)
+
+    assert (destination / "IMG_1.RAF").read_bytes() == b"b" * 500
+    assert record.written_name != "IMG_1.JPG"

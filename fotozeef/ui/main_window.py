@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
 
         self._slideshow: SlideshowWindow | None = None
         self._notice: QMessageBox | None = None
+        self._disk_warning_open = False
         self._actions: list[QAction] = []
         self._preparer = SlideshowPreparer(self)
         self._preparer.prepared.connect(self._on_slideshow_prepared)
@@ -912,15 +913,7 @@ class MainWindow(QMainWindow):
     def _on_selection_failed(self, photo_id: int, intended: bool, error: object) -> None:
         self._apply_selection_locally(photo_id, not intended)
         if isinstance(error, DiskNotConnected):
-            QMessageBox.warning(
-                self,
-                APP_NAME,
-                self.tr(
-                    "The disk with {0} is not connected.\n\n"
-                    "Connect it and open the project again. Until then photos cannot be"
-                    " selected or unselected; your selection so far is kept."
-                ).format(error.path),
-            )
+            self._warn_disk(error)
             return
         message = str(error)
         if not intended:
@@ -929,6 +922,29 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(
             self, APP_NAME, self.tr("Could not copy the photo:\n{0}").format(message)
         )
+
+    def _warn_disk(self, error: DiskNotConnected) -> None:
+        """One dialog at a time: refusals for several photos arrive while it is open."""
+        if self._disk_warning_open:
+            return
+        if error.certain:
+            text = self.tr(
+                "The disk with {0} is not connected.\n\n"
+                "Connect it and open the project again. Until then photos cannot be"
+                " selected or unselected; your selection so far is kept."
+            ).format(error.path)
+        else:
+            text = self.tr(
+                "{0} no longer exists.\n\n"
+                "Is it on a disk that is not connected? Then connect it and open the project"
+                " again. Otherwise create that folder again, or choose another selection"
+                " folder under Project ▸ Settings."
+            ).format(error.path)
+        self._disk_warning_open = True
+        try:
+            QMessageBox.warning(self, APP_NAME, text)
+        finally:
+            self._disk_warning_open = False
 
     def _rebuild_timeline(self) -> None:
         state = self._state

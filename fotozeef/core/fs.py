@@ -73,6 +73,20 @@ def volume_missing(
     return False
 
 
+def looks_unmounted(path: Path | str) -> bool:
+    """Whether the nearest folder that is there, going up from path, is empty.
+
+    That is what an unplugged disk leaves behind wherever it was mounted (/data/usb,
+    an NTFS folder mount); a missing folder inside a folder with files in it, such as
+    ~/Pictures, was simply deleted or not made yet.
+    """
+    current = Path(path)
+    for folder in (current, *current.parents):
+        if os.path.isdir(folder):
+            return _is_empty(str(folder))
+    return True
+
+
 def _anchor_present(anchor: str) -> bool:
     """A share whose root may not be listed is still there; only a missing one is not."""
     try:

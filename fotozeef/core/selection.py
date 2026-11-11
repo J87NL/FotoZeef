@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import filecmp
 import re
 import shutil
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from fotozeef.core.fs import normalize_name, os_path, volume_missing
+from fotozeef.core.fs import looks_unmounted, normalize_name, os_path, volume_missing
 from fotozeef.core.models import ProjectSettings, Selection, TimelineEntry
 
 _LABEL_SAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -17,11 +18,16 @@ class SelectionError(RuntimeError):
 
 
 class DiskNotConnected(SelectionError):
-    """The disk with this folder is not connected; the UI words it for the user."""
+    """The disk with this folder is not connected; the UI words it for the user.
 
-    def __init__(self, path: Path) -> None:
+    `certain` is False when the folder is merely gone from what looks like an empty
+    mount folder: then the user may also have deleted it, or meant another folder.
+    """
+
+    def __init__(self, path: Path, certain: bool = True) -> None:
         super().__init__(f"The disk with {path} is not connected. Connect it and try again.")
         self.path = path
+        self.certain = certain
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,8 +66,8 @@ class DestinationWriter:
         """
         self._check_disk(self._destination)
         destination = self._destination
-        if had_selections and not destination.is_dir() and not destination.parent.is_dir():
-            raise DiskNotConnected(destination)
+        if had_selections and not destination.is_dir() and looks_unmounted(destination):
+            raise DiskNotConnected(destination, certain=False)
         self._destination.mkdir(parents=True, exist_ok=True)
 
     def _check_disk(self, path: Path) -> None:
@@ -86,7 +92,8 @@ class DestinationWriter:
                 companion_target = self._destination / companion_name
                 if companion_target.exists() and normalize_name(companion_name) in reserved:
                     continue
-                shutil.copy2(os_path(companion), os_path(companion_target))
+                if not (companion_target.exists() and _same_file(companion_target, companion)):
+                    shutil.copy2(os_path(companion), os_path(companion_target))
                 companion_names.append(companion_name)
 
         return WriteResult(
@@ -123,7 +130,7 @@ class DestinationWriter:
             if owner is not None and owner != entry.photo.id:
                 continue
             copy = self._destination / companion_name
-            if _same_size(copy, source):
+            if _same_file(copy, source):
                 copy.unlink(missing_ok=True)
 
     def _resolve_name(self, entry: TimelineEntry, reserved: Mapping[str, int]) -> str:
@@ -159,7 +166,7 @@ class DestinationWriter:
             if reserved.get(normalize_name(name)) == entry.photo.id:
                 continue
             existing = self._destination / name
-            if existing.exists() and not _same_size(existing, source):
+            if existing.exists() and not _same_file(existing, source):
                 return False
         return True
 
@@ -185,8 +192,8 @@ def reconcile(
     entry_list = list(entries)
     selection_list = list(selections)
 
-    gone_with_its_parent = not destination.is_dir() and not destination.parent.is_dir()
-    if volume_missing(destination) or (selection_list and gone_with_its_parent):
+    unmounted_elsewhere = not destination.is_dir() and looks_unmounted(destination)
+    if volume_missing(destination) or (selection_list and unmounted_elsewhere):
         result.unreachable = True
         return result
 
@@ -232,10 +239,19 @@ def _size(path: Path) -> int | None:
         return None
 
 
-def _same_size(copy: Path, original: Path) -> bool:
-    """Whether a destination file is plausibly a copy of this original (copy2 keeps size)."""
+def _same_file(copy: Path, original: Path) -> bool:
+    """Whether a destination file is a copy of this original, byte for byte.
+
+    Size alone is not enough for RAW files: uncompressed RAF, ARW and NEF files from one
+    camera all have the same size. Only same-sized files are read.
+    """
     size = _size(copy)
-    return size is not None and size == _size(original)
+    if size is None or size != _size(original):
+        return False
+    try:
+        return filecmp.cmp(os_path(copy), os_path(original), shallow=False)
+    except OSError:
+        return False
 
 
 def _safe_label(label: str) -> str:

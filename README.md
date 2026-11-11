@@ -140,7 +140,10 @@ while the screen is black brings the photo back; the show stays paused until
 - **Photos on a USB disk?** Opening the project while the disk is not connected
   is safe: FotoZeef says which folders it cannot find, shows their photos as
   missing and keeps your selection. Selecting and unselecting are refused until
-  the disk is back. Connect it and open the project again.
+  the disk is back. Connect it and open the project again. On Windows the disk
+  has to come back under the same drive letter (E:, F:, …); if Windows gives it
+  another one, change it back in Disk Management or point the project at the
+  new letter under *Settings…*.
 - **What counts as selected** is what is in the selection folder. A file there
   counts for a photo when its name and its size match, so an unchanged copy you
   put in by hand is picked up too; an edited or rotated one is not.
