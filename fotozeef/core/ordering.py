@@ -10,7 +10,7 @@ _EPOCH = datetime(1970, 1, 1)
 
 def effective_time(photo: Photo, source: Source) -> datetime:
     base = photo.captured_at or _EPOCH
-    return base + timedelta(seconds=source.time_offset_s)
+    return base + timedelta(seconds=source.offset_for(photo.camera))
 
 
 def build_timeline(
@@ -54,7 +54,8 @@ def calibration_offset(
     """Seconds to add to the target's source so both photos land on the same moment."""
     reference_raw = reference.photo.captured_at or _EPOCH
     target_raw = target.photo.captured_at or _EPOCH
-    shifted_reference = reference_raw + timedelta(seconds=reference.source.time_offset_s)
+    reference_offset = reference.source.offset_for(reference.photo.camera)
+    shifted_reference = reference_raw + timedelta(seconds=reference_offset)
     return round((shifted_reference - target_raw).total_seconds())
 
 

@@ -6,7 +6,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from fotozeef.core import xmp
 from fotozeef.core.fs import normalize_name, os_path
 from fotozeef.core.models import ProjectSettings, Selection, TimelineEntry
 
@@ -22,18 +21,16 @@ class WriteResult:
     photo_id: int
     written_name: str
     companion_names: tuple[str, ...]
-    sidecar: Path | None
 
 
 @dataclass(slots=True)
 class ReconcileResult:
     dropped: list[int] = field(default_factory=list)
     adopted: list[tuple[int, str]] = field(default_factory=list)
-    adopted_from_sidecar: list[int] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
-        return bool(self.dropped or self.adopted or self.adopted_from_sidecar)
+        return bool(self.dropped or self.adopted)
 
 
 class DestinationWriter:
@@ -69,15 +66,10 @@ class DestinationWriter:
                 shutil.copy2(os_path(companion), os_path(companion_target))
                 companion_names.append(companion_name)
 
-        sidecar: Path | None = None
-        if self._settings.write_xmp:
-            sidecar = xmp.write_sidecar(entry.absolute_path)
-
         return WriteResult(
             photo_id=entry.photo.id,
             written_name=written_name,
             companion_names=tuple(companion_names),
-            sidecar=sidecar,
         )
 
     def deselect(self, entry: TimelineEntry, selection: Selection) -> None:
@@ -92,8 +84,6 @@ class DestinationWriter:
         for companion in entry.photo.companions:
             companion_name = f"{stem}{PurePosixPath(companion).suffix}"
             (self._destination / companion_name).unlink(missing_ok=True)
-
-        xmp.remove_sidecar(entry.absolute_path)
 
     def _resolve_name(self, entry: TimelineEntry, reserved: Mapping[str, int]) -> str:
         filename = entry.photo.filename
@@ -160,16 +150,6 @@ def reconcile(
             continue
         result.adopted.append((entry.photo.id, _path.name))
         selected_ids.add(entry.photo.id)
-
-    if settings.write_xmp:
-        for entry in entry_list:
-            if entry.photo.id in selected_ids:
-                continue
-            rating = xmp.read_rating(entry.absolute_path)
-            if rating is None or rating < 1:
-                continue
-            result.adopted_from_sidecar.append(entry.photo.id)
-            selected_ids.add(entry.photo.id)
 
     return result
 

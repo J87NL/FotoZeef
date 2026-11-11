@@ -15,6 +15,9 @@ Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases)
   it; nothing to install. Needs only the graphics stack (`libegl1`, `libgl1`),
   which every desktop already has.
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
+  To update, run the newer installer over the old one: it replaces the program
+  and keeps your projects. An older installer refuses to go over a newer
+  version, because an older FotoZeef cannot open projects saved by a newer one.
 - **macOS** — `FotoZeef-<version>-macos.zip`, for Macs with Apple silicon (M1
   and later) on macOS 13 Ventura or newer. Unzip it and move `FotoZeef.app` to
   *Applications*. The app is not signed by Apple, so the first time macOS
@@ -34,6 +37,11 @@ Create a project on the start screen, add one or more folders, and leave the
 destination blank to get `<first folder>/selectie`. Then arrow keys to move,
 space to keep.
 
+Recent projects are listed on the start screen. *Settings…* (or right-click)
+changes a project's name, folders and destination without opening it;
+*Remove…* takes it off the list. Removing a project or a folder never deletes
+photos: the originals and the selection folder stay on disk.
+
 ## Keyboard
 
 | Key | Action |
@@ -46,6 +54,7 @@ space to keep.
 | `0` | Fit to window |
 | `1` | Actual size |
 | `F` | Fullscreen |
+| `G` | Overview of all photos (Enter opens one, Esc returns) |
 | `Esc` | Unzoom, then leave fullscreen |
 | `F5` | Slideshow (see below) |
 | `Ctrl/Cmd + N` | New project |
@@ -118,7 +127,12 @@ while the screen is black brings the photo back; the show stays paused until
   in the timeline is guessed from the file date.
 - **Two cameras out of sync?** Mark a photo with *Timeline ▸ Set time reference*,
   go to the same moment from the other camera, and apply the delta under
-  *Timeline ▸ Time offsets…*.
+  *Timeline ▸ Time offsets…*. Offsets are set per camera (from EXIF) within each
+  folder, so one folder with a subfolder per camera works too. Two bodies of
+  the same model in one folder share an offset; add their folders separately to
+  set them apart.
+- **Lost in a long shoot?** `G` shows every photo as a grid, with a filter for
+  just the selected ones.
 - **Language** — English and Dutch, under *View ▸ Language*.
 - **Starting over** — FotoZeef keeps its database and thumbnails in
   `~/.local/share/FotoZeef/` and `~/.cache/FotoZeef/`. Delete those; your photos

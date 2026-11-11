@@ -277,7 +277,7 @@ class Viewer(QWidget):
         )
 
     def _detail_text(self, entry: TimelineEntry) -> str:
-        parts = [entry.source.label]
+        parts = [entry.camera_label]
         moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
         if entry.is_estimated_time:
             moment = self.tr("{0} (estimated)").format(moment)

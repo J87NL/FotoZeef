@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QStyle,
     QStyledItemDelegate,
@@ -106,6 +107,8 @@ class StartScreen(QWidget):
     new_requested = Signal()
     browse_requested = Signal()
     open_requested = Signal(int)
+    settings_requested = Signal(int)
+    remove_requested = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -167,6 +170,18 @@ class StartScreen(QWidget):
         self._list.setUniformItemSizes(True)
         self._list.itemActivated.connect(self._activate)
         self._list.itemDoubleClicked.connect(self._activate)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._show_menu)
+        self._list.currentRowChanged.connect(self._update_row_buttons)
+
+        self._settings_button = QPushButton(self.tr("Settings…"), self)
+        self._settings_button.clicked.connect(self._request_settings)
+        self._remove_button = QPushButton(self.tr("Remove…"), self)
+        self._remove_button.clicked.connect(self._request_remove)
+        self._row_buttons = QHBoxLayout()
+        self._row_buttons.addStretch(1)
+        self._row_buttons.addWidget(self._settings_button)
+        self._row_buttons.addWidget(self._remove_button)
 
         self._empty = QLabel(self.tr("No projects yet. Start with New project…"), self)
         self._empty.setObjectName("startSubtitle")
@@ -179,6 +194,7 @@ class StartScreen(QWidget):
         layout.addWidget(self._recent_label)
         layout.addWidget(self._empty)
         layout.addWidget(self._list, 1)
+        layout.addLayout(self._row_buttons)
 
         self.setStyleSheet(
             """
@@ -201,6 +217,8 @@ class StartScreen(QWidget):
         self._open_button.setText(self.tr("Open project…"))
         self._recent_label.setText(self.tr("Recent projects"))
         self._empty.setText(self.tr("No projects yet. Start with New project…"))
+        self._settings_button.setText(self.tr("Settings…"))
+        self._remove_button.setText(self.tr("Remove…"))
 
     def set_projects(
         self,
@@ -222,11 +240,52 @@ class StartScreen(QWidget):
         self._recent_label.setVisible(has_projects)
         if has_projects:
             self._list.setCurrentRow(0)
+        self._settings_button.setVisible(has_projects)
+        self._remove_button.setVisible(has_projects)
+        self._update_row_buttons()
 
     def _count_label(self, count: int) -> str:
         if count <= 0:
             return ""
         return self.tr("{0} in selection").format(count)
 
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Delete and self.current_project_id() is not None:
+            self._request_remove()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def current_project_id(self) -> int | None:
+        item = self._list.currentItem()
+        return int(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+
     def _activate(self, item: QListWidgetItem) -> None:
         self.open_requested.emit(int(item.data(Qt.ItemDataRole.UserRole)))
+
+    def _update_row_buttons(self, *_args: object) -> None:
+        selected = self.current_project_id() is not None
+        self._settings_button.setEnabled(selected)
+        self._remove_button.setEnabled(selected)
+
+    def _request_settings(self) -> None:
+        project_id = self.current_project_id()
+        if project_id is not None:
+            self.settings_requested.emit(project_id)
+
+    def _request_remove(self) -> None:
+        project_id = self.current_project_id()
+        if project_id is not None:
+            self.remove_requested.emit(project_id)
+
+    def _show_menu(self, position: QPoint) -> None:
+        item = self._list.itemAt(position)
+        if item is None:
+            return
+        self._list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction(self.tr("Open"), lambda: self._activate(item))
+        menu.addAction(self.tr("Settings…"), self._request_settings)
+        menu.addSeparator()
+        menu.addAction(self.tr("Remove…"), self._request_remove)
+        menu.exec(self._list.viewport().mapToGlobal(position))

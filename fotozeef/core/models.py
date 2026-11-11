@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -15,7 +15,6 @@ class CaptureSource(StrEnum):
 class ProjectSettings:
     recursive: bool = True
     copy_raw_sidecar: bool = True
-    write_xmp: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +35,27 @@ class Source:
     path: Path
     label: str
     time_offset_s: int
+    """The offset for every camera in this folder without one of its own."""
     sort_order: int
+    camera_offsets: tuple[tuple[str, int], ...] = ()
+    """Per camera in this folder: (camera key, seconds). See `camera_key`."""
+
+    def offset_for(self, camera: str | None) -> int:
+        key = camera_key(camera)
+        for name, offset in self.camera_offsets:
+            if name == key:
+                return offset
+        return self.time_offset_s
+
+    def with_camera_offset(self, camera: str | None, offset: int) -> Source:
+        key = camera_key(camera)
+        offsets = tuple(item for item in self.camera_offsets if item[0] != key)
+        return replace(self, camera_offsets=(*offsets, (key, offset)))
+
+
+def camera_key(camera: str | None) -> str:
+    """A photo's clock within its folder: its EXIF camera, or "" when that is unknown."""
+    return (camera or "").strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,3 +125,13 @@ class TimelineEntry:
     @property
     def is_estimated_time(self) -> bool:
         return self.photo.capture_source is CaptureSource.MTIME
+
+    @property
+    def camera_label(self) -> str:
+        """This photo's own camera; the folder's label when EXIF names none."""
+        return camera_key(self.photo.camera) or self.source.label
+
+    @property
+    def clock(self) -> tuple[int, str]:
+        """The clock that took this photo: one camera within one source folder."""
+        return (self.source.id, camera_key(self.photo.camera))

@@ -61,8 +61,8 @@ test suite fast and leaves the door open for a CLI later.
 | Database | `platformdirs.user_data_dir("FotoZeef")/fotozeef.sqlite` |
 | Thumbnails | `platformdirs.user_cache_dir("FotoZeef")` |
 
-One database for the whole installation, never next to the photos. The only thing
-written into a source folder is the optional XMP sidecar, which is off by default.
+One database for the whole installation, never next to the photos. Nothing is
+ever written into a source folder.
 
 ## Translations
 
@@ -130,7 +130,12 @@ real installer, with [Inno Setup] 6 installed:
 ```
 
 That writes `packaging\windows\Output\FotoZeef-<version>-setup.exe`, which
-installs per-user without admin rights. The bundled manifest turns on long-path
+installs per-user without admin rights. It upgrades in place (same `AppId`),
+first deleting the previous `_internal` folder so no stale files stay behind,
+and refuses to install over a newer version because that version may have
+migrated the database further. It follows the Windows language (English or
+Dutch); the script is UTF-8 with a BOM, which Inno Setup needs for the Dutch
+text. The bundled manifest turns on long-path
 awareness and PerMonitorV2 DPI.
 
 ### macOS — .app
@@ -239,7 +244,7 @@ it yourself triggers none of it.
    never reappears in the timeline.
 4. **Recursive scanning** — on by default, per-project setting.
 5. **`copy_raw_sidecar`** — on by default, per-project setting.
-6. **XMP sidecars** — shipped but **off by default**, per-project setting. This is
-   the one feature that writes into a source folder (a `.xmp` next to the original,
-   removed again on deselect if this app wrote it). Everything else treats the
-   source folders as read-only.
+6. **No XMP sidecars** — an earlier opt-in that wrote a `.xmp` next to each
+   original was dropped after 0.3: the source folders are now strictly read-only.
+   The `write_xmp` column stays in the database, unused, so older databases open
+   unchanged.

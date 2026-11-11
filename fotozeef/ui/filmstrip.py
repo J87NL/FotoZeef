@@ -66,7 +66,7 @@ class FilmstripModel(QAbstractListModel):
         self.dataChanged.emit(index, index)
 
     def _tooltip_lines(self, entry: TimelineEntry) -> list[str]:
-        lines = [entry.photo.filename, entry.source.label]
+        lines = [entry.photo.filename, entry.camera_label]
         moment = entry.effective_at.strftime("%Y-%m-%d %H:%M:%S")
         if entry.is_estimated_time:
             lines.append(

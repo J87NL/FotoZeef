@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from fotozeef.core import xmp
 from fotozeef.core.library import Library
 from fotozeef.core.models import ProjectSettings
 from fotozeef.core.selection import (
@@ -161,36 +160,6 @@ def test_reconcile_adopts_unknown_destination_files(
     photo_id = reopened.entries[0].photo.id
     assert photo_id in reopened.selections
     assert reopened.selections[photo_id].written_by_app is False
-
-
-def test_xmp_sidecar_written_and_removed(tmp_path: Path, library: Library, jpeg_factory) -> None:
-    source = tmp_path / "cam"
-    original = jpeg_factory(source / "IMG_0001.JPG")
-    destination = tmp_path / "out"
-
-    state = _open(library, [source], destination, write_xmp=True)
-    library.select(state, 0)
-    assert xmp.read_rating(original) == 5
-
-    library.deselect(state, 0)
-    assert xmp.read_rating(original) is None
-
-
-def test_existing_sidecar_counts_as_selected(
-    tmp_path: Path, library: Library, jpeg_factory
-) -> None:
-    source = tmp_path / "cam"
-    original = jpeg_factory(source / "IMG_0001.JPG")
-    destination = tmp_path / "out"
-
-    state = _open(library, [source], destination, write_xmp=True)
-    assert state.selections == {}
-
-    xmp.write_sidecar(original, rating=4)
-    reopened = library.open_project(state.project.id)
-
-    assert reopened.selections
-    assert (destination / "IMG_0001.JPG").is_file()
 
 
 def test_reserved_names_are_case_folded(tmp_path: Path, library: Library, jpeg_factory) -> None:
