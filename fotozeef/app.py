@@ -46,7 +46,8 @@ def build_application(argv: list[str]) -> QApplication:
 
 def selftest() -> int:
     """Boots the whole stack offscreen; CI runs this against the packaged builds."""
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    # Offscreen unless asked otherwise: CI also boots the bundle on a real X server.
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = build_application([APP_NAME])
 
     from PIL import Image
