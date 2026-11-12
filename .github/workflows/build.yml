@@ -39,21 +39,31 @@ jobs:
     name: AppImage
     needs: version
     runs-on: ubuntu-latest
+    # PyInstaller bundles the build machine's own libraries, and those need at least
+    # its glibc. Building on the oldest supported Ubuntu keeps the AppImage running
+    # there and on everything newer; ubuntu-latest moves on and broke 0.4.0.
+    container: ubuntu:22.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Qt runtime libraries
+      - name: Install build tools and Qt runtime libraries
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git binutils file xvfb xauth \
             libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3 libfontconfig1 \
             libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 \
-            libxcb-xkb1 libxcb-randr0 libxcb-render-util0 libfuse2 xvfb
+            libxcb-xkb1 libxcb-randr0 libxcb-render-util0
+
+      - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --locked --python 3.12
 
       - run: bash packaging/linux/build_appimage.sh
+
+      - name: Check it runs on Ubuntu 22.04 and newer (glibc 2.35)
+        run: bash packaging/linux/check_glibc.sh dist/FotoZeef 2.35
 
       - name: Boot the packaged app
         run: ./dist/FotoZeef/FotoZeef --selftest

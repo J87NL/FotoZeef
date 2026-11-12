@@ -109,7 +109,11 @@ bash packaging/linux/build_appimage.sh
 ```
 
 Produces a single `dist/FotoZeef-<version>-x86_64.AppImage` with its own Python,
-Qt and the libheif/libraw natives. It deliberately does **not** bundle
+Qt and the libheif/libraw natives. PyInstaller also copies system libraries of
+the machine it runs on (glib, libstdc++, …), and those need at least that
+machine's glibc, so the release is built in an `ubuntu:22.04` container and
+`packaging/linux/check_glibc.sh` fails the build when anything in it needs more
+than glibc 2.35. A local build only runs on your own glibc or newer. It deliberately does **not** bundle
 `libEGL`/`libGL` — graphics drivers have to match the host, so those come from
 the machine. Every desktop has them; a bare server image needs `libegl1 libgl1`.
 
