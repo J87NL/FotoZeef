@@ -24,7 +24,7 @@ sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libfontconfig1 \
 uv run ruff check .
 uv run ruff format .
 uv run pytest
-uv run fotozeef --selftest   # boots the whole stack offscreen
+uv run fotozeef --selftest   # boots the whole stack, offscreen by default
 ```
 
 `--selftest` is what CI runs against each packaged build: it reports whether

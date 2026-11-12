@@ -24,9 +24,13 @@ while IFS= read -r -d '' file; do
   [ "$(head -c 4 "$file" | od -An -c | tr -d ' ')" = '177ELF' ] || continue
   scanned=$((scanned + 1))
   name="${file#"$BUNDLE"/}"
-  references="$(objdump -p "$file")"
-  if grep -qE 'GLIBC_(ABI_|PRIVATE)' <<<"$references"; then
-    echo "::error::$name needs $(grep -oE 'GLIBC_(ABI_[A-Z0-9_]+|PRIVATE)' <<<"$references" | sort -u | tr '\n' ' ')- a glibc part or feature newer than $LIMIT"
+  references="$(objdump -p "$file")" || { echo "::error::objdump could not read $name"; exit 1; }
+  if grep -q 'GLIBC_PRIVATE' <<<"$references"; then
+    echo "::error::$name uses glibc's private symbols, so it is a piece of glibc itself; leave it out"
+    failures=$((failures + 1))
+  fi
+  if grep -qE 'GLIBC_ABI_' <<<"$references"; then
+    echo "::error::$name needs $(grep -oE 'GLIBC_ABI_[A-Z0-9_]+' <<<"$references" | sort -u | tr '\n' ' ')- loader features glibc 2.35 does not have"
     failures=$((failures + 1))
   fi
   version="$(grep -oE 'GLIBC_2\.[0-9]+' <<<"$references" | sed 's/GLIBC_//' | sort -uV | tail -1 || true)"

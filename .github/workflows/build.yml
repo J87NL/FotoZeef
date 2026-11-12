@@ -96,6 +96,8 @@ jobs:
     # 0.4.0 started on the machine that built it and nowhere older. This boots the
     # finished AppImage on newer systems than the build's, with only what a desktop
     # has installed, so a bundle that leans on the build machine shows up here.
+    # ubuntu:rolling moves with each release on purpose: a new Ubuntu that breaks
+    # the AppImage should stop a release until it is fixed.
     name: AppImage on ${{ matrix.image }}
     needs: linux
     runs-on: ubuntu-latest

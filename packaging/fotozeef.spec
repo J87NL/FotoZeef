@@ -60,6 +60,18 @@ UNUSED = (
     "libgthread-2.0.so",
     "libfontconfig.so",
     "libfreetype.so",
+    # What only those need. Left in, the system's glib or fontconfig would load an
+    # older bundled pcre2 or expat (no symbol versions) instead of its own.
+    "libpcre2-8.so",
+    "libexpat.so",
+    "libz.so",
+    "libpng16.so",
+    "libbrotli",
+    "libbz2.so",
+    "libffi.so",
+    "libmount.so",
+    "libblkid.so",
+    "libselinux.so",
     "Qt6Quick",
     "Qt6Qml",
     "Qt6Pdf",
