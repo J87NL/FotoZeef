@@ -12,8 +12,10 @@ Runs on Linux, macOS and Windows. Fully local: no account, no cloud, no telemetr
 Downloads are on the [releases page](https://github.com/J87NL/FotoZeef/releases).
 
 - **Linux** — `FotoZeef-<version>-x86_64.AppImage`. Make it executable and run
-  it; nothing to install. Needs only the graphics stack (`libegl1`, `libgl1`),
-  which every desktop already has.
+  it; nothing to install. Runs on Ubuntu 22.04 or newer, and on other
+  distributions from that era on (glibc 2.35 or later). Needs only the graphics
+  stack (`libegl1`, `libgl1`), which every desktop already has. (The 0.4.0
+  AppImage needed a newer glibc by mistake; use 0.4.1 or later.)
 - **Windows** — `FotoZeef-<version>-setup.exe`. Installs per user, no admin rights.
   To update, run the newer installer over the old one: it replaces the program
   and keeps your projects. Going back is not possible, because an older

@@ -45,8 +45,10 @@ def build_application(argv: list[str]) -> QApplication:
 
 
 def selftest() -> int:
-    """Boots the whole stack offscreen; CI runs this against the packaged builds."""
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    """Boots the whole stack (offscreen unless QT_QPA_PLATFORM says otherwise); CI runs it
+    against the packaged builds."""
+    # Offscreen unless asked otherwise: CI also boots the bundle on a real X server.
+    os.environ["QT_QPA_PLATFORM"] = os.environ.get("QT_QPA_PLATFORM") or "offscreen"
     app = build_application([APP_NAME])
 
     from PIL import Image

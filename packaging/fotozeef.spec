@@ -45,6 +45,33 @@ analysis = Analysis(
 # hooks pull in the rest of Qt anyway, so the unused halves are dropped here.
 # Every pattern below was removed and then verified with `FotoZeef --selftest`.
 UNUSED = (
+    # Linux libraries every desktop has, from the build machine. Built on the oldest
+    # supported Ubuntu, a bundled copy would be older than the user's and shadow it:
+    # graphics drivers loaded from the system then miss newer libstdc++ symbols.
+    # libmvec is part of glibc itself and reads glibc's private data. Wheels ship
+    # their own copies under hashed names (libfreetype-1a2b.so), which stay.
+    "libmvec.so",
+    "libstdc++.so",
+    "libgcc_s.so",
+    "libglib-2.0.so",
+    "libgobject-2.0.so",
+    "libgio-2.0.so",
+    "libgmodule-2.0.so",
+    "libgthread-2.0.so",
+    "libfontconfig.so",
+    "libfreetype.so",
+    # What only those need. Left in, the system's glib or fontconfig would load an
+    # older bundled pcre2 or expat (no symbol versions) instead of its own.
+    "libpcre2-8.so",
+    "libexpat.so",
+    "libz.so",
+    "libpng16.so",
+    "libbrotli",
+    "libbz2.so",
+    "libffi.so",
+    "libmount.so",
+    "libblkid.so",
+    "libselinux.so",
     "Qt6Quick",
     "Qt6Qml",
     "Qt6Pdf",

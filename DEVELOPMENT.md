@@ -24,7 +24,7 @@ sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libfontconfig1 \
 uv run ruff check .
 uv run ruff format .
 uv run pytest
-uv run fotozeef --selftest   # boots the whole stack offscreen
+uv run fotozeef --selftest   # boots the whole stack, offscreen by default
 ```
 
 `--selftest` is what CI runs against each packaged build: it reports whether
@@ -109,9 +109,21 @@ bash packaging/linux/build_appimage.sh
 ```
 
 Produces a single `dist/FotoZeef-<version>-x86_64.AppImage` with its own Python,
-Qt and the libheif/libraw natives. It deliberately does **not** bundle
-`libEGL`/`libGL` — graphics drivers have to match the host, so those come from
-the machine. Every desktop has them; a bare server image needs `libegl1 libgl1`.
+Qt and the libheif/libraw natives.
+
+PyInstaller copies system libraries of the machine it runs on, and those need at
+least that machine's glibc. So the release is built in an `ubuntu:22.04`
+container, and the libraries every desktop has anyway (glib, libstdc++,
+libgcc_s, fontconfig, freetype, and glibc's own libmvec) are left out in the
+spec: a copy from the oldest supported system would shadow the user's newer one.
+`packaging/linux/check_glibc.sh` then fails the build when anything left needs
+more than glibc 2.35 or a glibc-internal symbol, and the `linux-newer` job boots
+the finished AppImage on Ubuntu 24.04 and the newest Ubuntu before anything is
+published. A local build only runs on your own glibc or newer.
+
+It deliberately does **not** bundle `libEGL`/`libGL` — graphics drivers have to
+match the host, so those come from the machine. Every desktop has them; a bare
+server image needs `libegl1 libgl1`.
 
 ### Windows — .exe and installer
 
